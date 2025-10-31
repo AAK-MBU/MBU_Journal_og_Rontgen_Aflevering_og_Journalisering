@@ -15,3 +15,8 @@ RETRY_BASE_DELAY = 0.5  # seconds (exponential backoff)
 APP_PATH = "C:\\Program Files (x86)\\TM Care\\TM Tand\\TMTand.exe"
 TMP_FOLDER = "C:\\tmp\\tmt"
 ROMEXIS_ROOT_PATH = r"\\SRVAPPROMEX04\romexis_images$"
+
+# ----------------------
+# Document
+# ----------------------
+DOCUMENT_TYPE = "Udskrivning - 22 år!$#"

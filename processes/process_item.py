@@ -142,10 +142,9 @@ def process_item(item_data: dict, item_reference: str):
             months=1
         )
         journal_note = (
-            "Administrativt notat 'Udskrivning til frit valg gennemført af robot. "
-            "Sendt information til pt. og sendt journal og billedmateriale til "
-            "privat tandlæge via EDI-portal. Se dokumentskab. Journal flyttet "
-            "til Tandplejen Aarhus'"
+            "Administrativt notat 'Udskrivning 22 år gennemført af robot. "
+            "Sendt information, journal og billedmateriale til privat tandklinik "
+            "via EDI-portal. Se dokumentskab'"
         )
         filter_params = {
             "p.cpr": queue_element_data["patient_cpr"],

@@ -25,7 +25,7 @@ def prepare_edi_portal_documents(
     def get_list_of_documents_for_edi_portal() -> list:
         """Get the latest version of 'Journaludskrift' and other documents for EDI Portal."""
         try:
-            document_types = ["Journaludskrift", "Udskrivning - Frit valg!$#"]
+            document_types = ["Journaludskrift", config.DOCUMENT_TYPE]
             logger.info(
                 "Getting documents for EDI Portal for patient with types: %s",
                 document_types,
@@ -41,7 +41,7 @@ def prepare_edi_portal_documents(
 
             if not list_of_documents:
                 logger.error("No documents found for patient.")
-                raise BusinessError("No documents found.")
+                raise ProcessError("No documents found.")
 
             logger.info("Found %d documents for patient.", len(list_of_documents))
 
