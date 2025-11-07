@@ -2,8 +2,7 @@
 
 import datetime
 import logging
-
-from dateutil.relativedelta import relativedelta
+import zoneinfo
 
 from processes.application_handler import get_app
 
@@ -19,7 +18,9 @@ def check_and_create_medical_record_document(queue_element_data, solteq_tand_db_
         raise ValueError("Could not get application instance.")
 
     logger.info("Checking if the medical record document is already created.")
-    one_month_ago = datetime.datetime.now() - relativedelta(months=1)
+    local_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+    now = datetime.datetime.now(tz=local_tz)
+    one_month_ago = now - datetime.timedelta(days=30)
     document_type = "Journaludskrift"
     list_of_documents_medical_record = solteq_tand_db_object.get_list_of_documents(
         filters={

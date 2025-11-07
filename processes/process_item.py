@@ -3,8 +3,8 @@
 import datetime
 import logging
 import time
+import zoneinfo
 
-from dateutil.relativedelta import relativedelta
 from mbu_dev_shared_components.solteqtand.database import SolteqTandDatabase
 from mbu_rpa_core.exceptions import BusinessError, ProcessError
 
@@ -31,7 +31,7 @@ from processes.subprocesses.process.romexis.romexis_images_handler import (
 logger = logging.getLogger(__name__)
 
 
-def process_item(item_data: dict, item_reference: str):
+def process_item(item_data: dict):
     """Function to handle item processing"""
 
     try:
@@ -115,9 +115,9 @@ def process_item(item_data: dict, item_reference: str):
 
         # Check if the receipt PDF was created successfully and upload it to Solteq Tand.
         logger.info("Checking for existing EDI Portal documents.")
-        edi_receipt_date_one_month_ago = datetime.datetime.now() - relativedelta(
-            months=1
-        )
+        local_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+        now = datetime.datetime.now(tz=local_tz)
+        edi_receipt_date_one_month_ago = now - datetime.timedelta(days=30)
         list_of_documents = solteq_tand_db_object.get_list_of_documents(
             filters={
                 "p.cpr": queue_element_data["patient_cpr"],
@@ -138,9 +138,9 @@ def process_item(item_data: dict, item_reference: str):
 
         # Check if administrative note exists if not create it.
         logger.info("Checking if administrative note exists.")
-        journal_note_date_one_month_ago = datetime.datetime.now() - relativedelta(
-            months=1
-        )
+        local_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+        now = datetime.datetime.now(tz=local_tz)
+        journal_note_date_one_month_ago = now - datetime.timedelta(days=30)
         journal_note = (
             "Administrativt notat 'Udskrivning 22 år gennemført af robot. "
             "Sendt information, journal og billedmateriale til privat tandklinik "

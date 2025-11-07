@@ -24,7 +24,7 @@ def get_exceptions(db_connection: str) -> list[dict]:
         )
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
-        result = [dict(zip(columns, row)) for row in rows]
+        result = [dict(zip(columns, row, strict=True)) for row in rows]
         return result
     except Exception as e:
         logger.error("Error fetching exceptions: %s", e)

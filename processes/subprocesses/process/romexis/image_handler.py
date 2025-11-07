@@ -6,6 +6,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from mbu_dev_shared_components.romexis.helper_functions import (
     add_black_bar_and_text_to_image,
@@ -28,7 +29,11 @@ def build_source_path(raw_path: str) -> str:
 def format_image_date(date_value) -> str:
     """Format YYYYMMDD integer to DD/MM/YYYY string."""
     try:
-        return datetime.strptime(str(date_value), "%Y%m%d").strftime("%d/%m/%Y")
+        return (
+            datetime.strptime(str(date_value), "%Y%m%d")
+            .replace(tzinfo=ZoneInfo("Europe/Copenhagen"))
+            .strftime("%d/%m/%Y")
+        )
     except ProcessError:
         return None
 

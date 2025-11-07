@@ -7,11 +7,14 @@ import locale
 import logging
 import re
 import time
+import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pyodbc
 import uiautomation as auto
+
+from helpers import config
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +322,9 @@ def edi_portal_add_content(
 
         try:
             date_str = data["dateOfExamination"]
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+            )
             return date_obj.strftime("%B %Y").capitalize()
         except (ValueError, KeyError):
             logger.error("Error parsing date: %s", date_str)
@@ -359,16 +364,13 @@ def edi_portal_add_content(
     body_modified = re.sub(r"@examinationDate", examination_date, body)
     body_modified = re.sub(r"@riscProfile", risc_profile, body_modified)
     if journal_continuation_text:
-        if "Besked til privat tandlæge - Frit valg: " in journal_continuation_text:
+        if config.JOURNAL_CONTINUATION_TEXT in journal_continuation_text:
             journal_continuation_text = journal_continuation_text.replace(
-                "Besked til privat tandlæge - Frit valg: ", ""
+                config.JOURNAL_CONTINUATION_TEXT, ""
             )
-        elif (
-            "Følgende oplysninger skal medsendes til privat tandlæge i forbindelse med udskrivning: "
-            in journal_continuation_text
-        ):
+        elif config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT in journal_continuation_text:
             journal_continuation_text = journal_continuation_text.replace(
-                "Følgende oplysninger skal medsendes til privat tandlæge i forbindelse med udskrivning: ",
+                config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT,
                 "",
             )
 
@@ -383,7 +385,7 @@ def edi_portal_add_content(
 
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
         )
 
         subject_field = wait_for_control(
@@ -430,7 +432,7 @@ def edi_portal_upload_files(path_to_files: str) -> None:
     upload_dialog.SendKeys("{ENTER}")
 
     root_web_area = wait_for_control(
-        auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+        auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
     )
 
     element_gone = False
@@ -479,7 +481,7 @@ def edi_portal_send_message() -> None:
     """
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
         )
 
         send_message_button = wait_for_control(
@@ -507,7 +509,7 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
     """
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
         )
 
         table_post_messages = wait_for_control(
@@ -525,7 +527,9 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             if not date_str:
                 return None
             try:
-                return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+                return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
+                    tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+                )
             except ValueError:
                 return None
 
@@ -536,10 +540,11 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
 
                 if subject == message:
                     parsed_date = _parse_date(date_str)
-                    if parsed_date is not None:
-                        if latest_date is None or parsed_date > latest_date:
-                            latest_matching_row = row
-                            latest_date = parsed_date
+                    if parsed_date is not None and (
+                        latest_date is None or parsed_date > latest_date
+                    ):
+                        latest_matching_row = row
+                        latest_date = parsed_date
 
             # Use the latest matching row if found
             if latest_matching_row is not None:
@@ -632,7 +637,9 @@ def get_constants(conn_string: str, name: str) -> list:
         with pyodbc.connect(conn_string) as conn, conn.cursor() as cursor:
             cursor.execute(query, params)
             columns = [column[0] for column in cursor.description]
-            constant_value = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            constant_value = [
+                dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+            ]
 
         return constant_value
 
@@ -657,7 +664,9 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         if not date_str:
             return None
         try:
-            return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
+                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+            )
         except ValueError:
             logger.error("Error parsing date: %s", date_str)
             return None
@@ -689,7 +698,9 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         success_message = False
 
         # Define one month ago here
-        one_month_ago = datetime.now() - timedelta(days=30)
+        local_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+        now = datetime.now(tz=local_tz)
+        one_month_ago = now - timedelta(days=30)
 
         if row_count > 0:
             for row in range(1, row_count):
