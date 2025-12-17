@@ -12,7 +12,7 @@ This process automates the workflow for 22-year-old patient handovers:
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.13+
 - Windows environment (for Solteq Tand integration)
 - Access to Solteq Tand application
 - EDI Portal credentials

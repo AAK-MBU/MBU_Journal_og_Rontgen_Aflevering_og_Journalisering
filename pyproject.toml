@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Automated RPA process for transferring medical records and x-ray files to private dental clinics via EDI Portal"
 tags = ["ats"]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "automation-server-client @ git+https://github.com/odense-rpa/automation-server-client.git",
     "mbu-rpa-core",
@@ -67,6 +67,6 @@ exclude = [
   "dist",
   "__pycache__"
 ]
-pythonVersion = "3.11"
+pythonVersion = "3.13"
 typeCheckingMode = "basic"   # or "basic"
 reportMissingTypeStubs = true
