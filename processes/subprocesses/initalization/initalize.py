@@ -5,7 +5,8 @@ import logging
 from mbu_dev_shared_components.solteqtand import SolteqTandDatabase
 from mbu_rpa_core.exceptions import BusinessError, ProcessError
 
-from helpers.app_context import app_context
+from helpers import config
+from helpers.context_handler import get_context_values, set_context_values
 from helpers.credential_constants import get_exceptions, get_rpa_constant
 from processes.application_handler import get_app
 
@@ -15,14 +16,6 @@ logger = logging.getLogger(__name__)
 class InitializationChecks:
     """
     Class to perform initialization checks for the process.
-    - Check if primary clinic is set.
-    - Check if extern dentist information is set.
-    - Check if extern clinic has a deal with Aarhus Kommune.
-    - Check if administrative note is set.
-    - Check if contractor ID is valid.
-
-    Args:
-        queue_element_data: Data from the queue element.
     """
 
     def __init__(self, queue_element_data) -> None:
@@ -35,9 +28,7 @@ class InitializationChecks:
     def _get_error_message(self, exception_code: str, default: str) -> str:
         """Get the error message from the database based on the exception code."""
         try:
-            excp = get_exceptions(
-                self.rpa_db_conn  # self.queue_element_data["process_id"]
-            )
+            excp = get_exceptions(self.rpa_db_conn)
             return next(
                 (
                     d["message_text"]
@@ -54,7 +45,7 @@ class InitializationChecks:
         """Check if primary clinic is set."""
         try:
             filter_params = {
-                "p.cpr": self.queue_element_data.get("patient_cpr"),
+                "p.cpr": get_context_values("cpr"),
             }
             result = self.solteq_tand_db_obj.get_list_of_primary_dental_clinics(
                 filters=filter_params
@@ -66,37 +57,27 @@ class InitializationChecks:
             raise
 
     def check_extern_clinic_data(self) -> list:
-        """Check if extern dentist information is set."""
+        """
+        Check if extern dentist phone number is set else raise BusinessError.
+
+        Returns:
+            list: A list of extern dentist data.
+
+        Raises:
+            BusinessError: If a business rule is broken.
+        """
         try:
             filter_params = {
-                "p.cpr": self.queue_element_data["patient_cpr"],
+                "p.cpr": get_context_values("cpr"),
             }
             result = self.solteq_tand_db_obj.get_list_of_extern_dentist(
                 filters=filter_params
             )
 
-            # Check if extern dentist is set
-            logger.info("Checking if extern dentist is set...")
-            if not result:
-                message = self._get_error_message("1B", "Extern dentist is not set.")
-                raise BusinessError(message)
-            logger.info("Extern dentist is set.")
-
-            # Check if contractor id is set
-            logger.info("Checking if contractor id is set...")
-            if not result[0].get("contractorId"):
-                message = self._get_error_message(
-                    "1C", "Contractor id is not set for extern dentist."
-                )
-                raise BusinessError(message)
-            logger.info("Contractor id is set.")
-
-            # Check if phonenumber is set
+            # Check if extern dentist phone number is set
             logger.info("Checking if phone number is set...")
             if not result[0].get("phoneNumber"):
-                message = self._get_error_message(
-                    "1E", "Phone number is not set for extern dentist."
-                )
+                message = config.EXTERN_CLINIC_PHONE_NUMBER_NOT_SET_MESSAGE
                 raise BusinessError(message)
             logger.info("Phone number is set.")
 
@@ -122,8 +103,8 @@ class InitializationChecks:
         """
         try:
             filter_params = {
-                "p.cpr": self.queue_element_data["patient_cpr"],
-                "dn.Beskrivelse": "%Besked til privat tandklinik - Udskrivning 22 år%",
+                "p.cpr": get_context_values("cpr"),
+                "dn.Beskrivelse": f"%{config.JOURNAL_CONTINUATION_TEXT}%",
             }
             result = self.solteq_tand_db_obj.get_list_of_journal_notes(
                 filters=filter_params,
@@ -158,11 +139,11 @@ class InitializationChecks:
             solteq_app.open_edi_portal()
 
             logger.info("Checking contractor data...")
-            if app_context.extern_clinic_data is None:
+            if get_context_values("extern_clinic_data") is None:
                 raise BusinessError("Extern clinic data is not set.")
             result = solteq_app.edi_portal_check_contractor_id(
-                extern_clinic_data=app_context.extern_clinic_data
-                if app_context.extern_clinic_data
+                extern_clinic_data=get_context_values("extern_clinic_data")
+                if get_context_values("extern_clinic_data")
                 else {}
             )
 
@@ -194,9 +175,9 @@ def initalization_checks_and_get_data(queue_element_data) -> None:
     """
     Perform initialization checks for the process.
     - Get primary clinic data.
-    - Check if extern dentist information is set and get extern clinic data.
+    - Check if extern dentist phone number is set and get extern clinic data.
     - Get administrative note.
-    - Check if contractor ID is valid.
+    - Check if contractor phone number from EDI-Portal matches the one in Solteq Tand.
 
     Args:
         orchestrator_connection: A connection to OpenOrchestrator.
@@ -222,17 +203,23 @@ def initalization_checks_and_get_data(queue_element_data) -> None:
     )
 
     # Get primary clinic data
-    app_context.primary_clinic_and_patient_data = (
-        init_checks_obj.get_primary_clinic_data()
+    set_context_values(
+        primary_clinic_and_patient_data=init_checks_obj.get_primary_clinic_data()
     )
 
-    # Check if extern dentist information is set and get extern clinic data
-    app_context.extern_clinic_data = init_checks_obj.check_extern_clinic_data()
+    # Check if extern dentist phone number is set and get extern clinic data
+    set_context_values(extern_clinic_data=init_checks_obj.check_extern_clinic_data())
 
     # Get administrative note
-    app_context.administrative_note = init_checks_obj.get_administrative_note()
+    set_context_values(administrative_note=init_checks_obj.get_administrative_note())
+    administrative_note = get_context_values("administrative_note")
+    if administrative_note:
+        description = administrative_note[0].get("Beskrivelse")
+    set_context_values(
+        administrative_note_description=description if administrative_note else []
+    )
 
-    # Check if contractor ID is valid
+    # Check if contractor phone number from EDI-Portal matches the one in Solteq Tand
     init_checks_obj.check_contractor_data()
 
     logger.info("Initialization checks completed.")

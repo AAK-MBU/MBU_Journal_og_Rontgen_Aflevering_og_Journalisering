@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from helpers.context_handler import get_context_values
 from helpers.credential_constants import get_rpa_constant
 from processes.subprocesses.process.edi import (
     edi_portal_functions as edifuncs,
@@ -59,13 +60,13 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         Optional[str]:
             Path to the renamed PDF receipt, or None on failure.
     """
-    constant = get_rpa_constant("udskrivning_edi_portal_content")
+    constant = get_rpa_constant("udskrivning_22_aar_edi_portal_content")
     if not constant:
         logger.error(
-            "Constant 'udskrivning_edi_portal_content' not found in the database."
+            "Constant 'udskrivning_22_aar_edi_portal_content' not found in the database."
         )
         raise RuntimeError(
-            "Constant 'udskrivning_edi_portal_content' not found in the database."
+            "Constant 'udskrivning_22_aar_edi_portal_content' not found in the database."
         )
 
     context.value_data = json.loads(constant) if isinstance(constant, str) else constant
@@ -74,9 +75,8 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         logger.error("Invalid or missing 'edi_portal_content' data in constant.")
         raise RuntimeError("Invalid or missing 'edi_portal_content' data in constant.")
 
-    patient_name = context.queue_element.get("patient_name")
+    patient_name = get_context_values("patient_name")
     base_subject = context.value_data["edi_portal_content"]["subject"]
-
     if context.extern_clinic_data[0]["contractorId"] == "477052":
         subject = base_subject + " på Tandklinikken Hasle Torv " + patient_name
     elif context.extern_clinic_data[0]["contractorId"] == "470678":

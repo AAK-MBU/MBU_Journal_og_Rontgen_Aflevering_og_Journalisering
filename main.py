@@ -11,6 +11,7 @@ from mbu_rpa_core.exceptions import BusinessError, ProcessError
 from mbu_rpa_core.process_states import CompletedState
 
 from helpers import ats_functions, config
+from helpers.context_handler import Scope
 from processes.application_handler import close, reset, startup
 from processes.error_handling import ErrorContext, handle_error
 from processes.finalize_process import finalize_process
@@ -62,11 +63,14 @@ async def process_workqueue(workqueue: Workqueue):
         for item in workqueue:
             try:
                 with item:
-                    data, reference = ats_functions.get_item_info(item)
+                    data, reference, item_id = ats_functions.get_item_info(item)
 
                     try:
                         logger.info("Processing item with reference: %s", reference)
-                        process_item(data, reference)
+
+                        # Context handler: automatically resets shared context before and after processing each item.
+                        with Scope():
+                            process_item(data, item_id)
 
                         completed_state = CompletedState.completed(
                             "Process completed without exceptions"

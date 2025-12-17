@@ -52,8 +52,16 @@ def get_workqueue_items(workqueue: Workqueue, return_data=False):
 
 
 def get_item_info(item: WorkItem):
-    """Unpack item"""
-    return item.data, item.reference
+    """Unpack item and return the actual data and reference."""
+    item_dict = item.data
+    item_id = item.id
+    if isinstance(item_dict, dict) and "item" in item_dict:
+        data = item_dict["item"].get("data", {})
+        reference = item_dict["item"].get("reference", "")
+    else:
+        data = item_dict
+        reference = getattr(item, "reference", "")
+    return data, reference, item_id
 
 
 def init_logger():

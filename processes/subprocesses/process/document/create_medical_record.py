@@ -4,12 +4,13 @@ import datetime
 import logging
 import zoneinfo
 
+from helpers.context_handler import get_context_values
 from processes.application_handler import get_app
 
 logger = logging.getLogger(__name__)
 
 
-def check_and_create_medical_record_document(queue_element_data, solteq_tand_db_object):
+def check_and_create_medical_record_document(solteq_tand_db_object):
     """Check if the medical record document is already created; if not, create it."""
     # Get the application instance
     solteq_app = get_app()
@@ -24,7 +25,7 @@ def check_and_create_medical_record_document(queue_element_data, solteq_tand_db_
     document_type = "Journaludskrift"
     list_of_documents_medical_record = solteq_tand_db_object.get_list_of_documents(
         filters={
-            "p.cpr": queue_element_data["patient_cpr"],
+            "p.cpr": get_context_values("cpr"),
             "ds.DocumentDescription": "%Printet journal%(delvis kopi)%",
             "ds.DocumentType": document_type,
             "ds.rn": "1",
