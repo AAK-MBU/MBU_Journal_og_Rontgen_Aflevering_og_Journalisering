@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def get_app():
     """Function to get the application instance"""
-    # ruff: noqa: PLW0602
+    # ruff: noqa: PLW0602, PLW0603
     global APP
     return APP
 
@@ -36,7 +36,8 @@ def startup():
         application.start_application()
         application.login()
 
-        global APP  # ruff: noqa: PLW0602
+        # ruff: noqa: PLW0602, PLW0603
+        global APP
         APP = application
     except Exception as e:
         logger.error("Failed to start Solteq Tand application: %s", e)

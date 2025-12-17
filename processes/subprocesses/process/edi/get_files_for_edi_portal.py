@@ -8,13 +8,12 @@ import shutil
 from mbu_rpa_core.exceptions import ProcessError
 
 from helpers import config
+from helpers.context_handler import get_context_values
 
 logger = logging.getLogger(__name__)
 
 
-def prepare_edi_portal_documents(
-    solteq_tand_db_object, queue_element_data: dict
-) -> str:
+def prepare_edi_portal_documents(solteq_tand_db_object) -> str:
     """
     Prepare documents for EDI Portal:
         - Retrieves the relevant documents.
@@ -33,7 +32,7 @@ def prepare_edi_portal_documents(
             list_of_documents = solteq_tand_db_object.get_list_of_documents(
                 filters={
                     "ds.DocumentType": document_types,
-                    "p.cpr": queue_element_data["patient_cpr"],
+                    "p.cpr": get_context_values("cpr"),
                     "ds.rn": "1",
                     "ds.DocumentStoreStatusId": "1",
                 }
@@ -71,7 +70,7 @@ def prepare_edi_portal_documents(
             for doc in filtered_documents:
                 if doc["DocumentType"] == "Journaludskrift":
                     doc["OriginalFilename"] = (
-                        f"Journaludskrift - {queue_element_data['patient_name']}.pdf"
+                        f"Journaludskrift - {get_context_values('patient_name')}.pdf"
                     )
 
             return filtered_documents
@@ -84,7 +83,7 @@ def prepare_edi_portal_documents(
         try:
             logger.info("Copying documents for EDI Portal.")
             temp_dir = os.path.join(
-                config.TMP_FOLDER, queue_element_data["patient_cpr"], "edi_portal"
+                config.TMP_FOLDER, get_context_values("cpr"), "edi_portal"
             )
 
             if not os.path.exists(temp_dir):
