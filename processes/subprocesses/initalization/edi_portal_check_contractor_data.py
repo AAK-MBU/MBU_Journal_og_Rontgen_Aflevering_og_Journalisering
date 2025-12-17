@@ -7,7 +7,7 @@ import logging
 from application_handler import get_app
 from mbu_rpa_core.exceptions import BusinessError, ProcessError
 
-from helpers.app_context import app_context
+from helpers.context_handler import get_context_values
 from helpers.credential_constants import get_rpa_constant
 from processes.subprocesses.db_utils import get_exceptions
 
@@ -33,7 +33,7 @@ def check_contractor_data() -> None:
         logger.info("Checking if contractor id is set...")
 
         contractor_check = solteq_app.edi_portal_check_contractor_id(
-            extern_clinic_data=app_context.extern_clinic_data,
+            extern_clinic_data=get_context_values("extern_clinic_data"),
         )
 
         rpa_db_conn = get_rpa_constant("DbConnectionString")

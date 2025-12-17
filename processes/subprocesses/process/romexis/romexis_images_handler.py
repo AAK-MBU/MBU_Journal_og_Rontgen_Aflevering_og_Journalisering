@@ -7,6 +7,7 @@ from mbu_dev_shared_components.romexis.db_handler import RomexisDbHandler
 from mbu_rpa_core.exceptions import BusinessError, ProcessError
 
 from helpers import config
+from helpers.context_handler import get_context_values
 from helpers.credential_constants import get_rpa_constant
 from processes.subprocesses.process.romexis.db_handler import (
     get_image_data,
@@ -23,7 +24,7 @@ from processes.subprocesses.process.romexis.zip_handler import (
 logger = logging.getLogger(__name__)
 
 
-def get_images_from_romexis(queue_element_data) -> tuple[str, str] | None:
+def get_images_from_romexis() -> tuple[str, str] | None:
     """
     Fetches images from the Romexis database.
 
@@ -51,7 +52,7 @@ def get_images_from_romexis(queue_element_data) -> tuple[str, str] | None:
             logger.info("Enhanced connection string with: %s", enhancements)
 
         romexis_db_handler = RomexisDbHandler(conn_str=romexis_db_conn)
-        ssn = queue_element_data.get("patient_cpr")
+        ssn = get_context_values("cpr")
         destination_path = os.path.join(config.TMP_FOLDER, ssn, "img")
 
         person_info = get_person_info(romexis_db_handler, ssn)

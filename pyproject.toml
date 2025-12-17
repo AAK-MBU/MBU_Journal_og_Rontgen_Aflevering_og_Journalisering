@@ -1,17 +1,18 @@
 [project]
 name = "MBU_Journal_og_Rontgen_Aflevering_og_Journalisering"
-version = "0.0.0"
-description = "Add your description here"
+version = "0.1.0"
+description = "Automated RPA process for transferring medical records and x-ray files to private dental clinics via EDI Portal"
+tags = ["ats"]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "automation-server-client @ git+https://github.com/odense-rpa/automation-server-client.git",
-    "mbu-dev-shared-components>=3.0.0",
     "mbu-rpa-core",
     "pillow",
     "ruff",
-    "mbu-dev-shared-components[solteqtand, romexis]==4.2.0",
-    "mbu_rpa_core"
+    "mbu-dev-shared-components[romexis,solteqtand]==4.2.8",
+    "mbu_rpa_core",
+    "tzdata",
 ]
 
 [tool.uv.sources]
@@ -34,7 +35,7 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-ignore = ["E501", "E251"]
+ignore = ["E501", "E251", "PLW0602", "PLW0603"]
 select = [
   "F",    # Pyflakes
   "E",    # pycodestyle errors

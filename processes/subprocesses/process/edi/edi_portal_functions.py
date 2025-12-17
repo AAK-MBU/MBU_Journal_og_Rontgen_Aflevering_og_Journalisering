@@ -7,11 +7,15 @@ import locale
 import logging
 import re
 import time
+import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pyodbc
 import uiautomation as auto
+
+from helpers import config
+from helpers.context_handler import get_context_values
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +43,8 @@ def wait_for_control(
     end_time = time.time() + timeout
     while time.time() < end_time:
         try:
-            print(f"Searching for control: {search_params} at depth {search_depth}")
             control = control_type(searchDepth=search_depth, **search_params)
-            print(f"Control found: {control}")
-            print(f"Control exists: {control.Exists(0, 0)}")
             if control.Exists(0, 0):
-                print(f"Control found: {search_params}")
                 return control
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Error while searching for control: %s", e)
@@ -104,6 +104,10 @@ def edi_portal_check_contractor_id(
     """
     try:
         # Handle Hasle Torv Clinic special case
+        contractor_id = None
+        clinic_phone_number = None
+
+        # Handle Hasle Torv Clinic special case
         if (
             extern_clinic_data[0]["contractorId"] == "477052"
             or extern_clinic_data[0]["contractorId"] == "470678"
@@ -111,8 +115,16 @@ def edi_portal_check_contractor_id(
             contractor_id = "485055"
             clinic_phone_number = "86135240"
         else:
-            contractor_id = extern_clinic_data[0]["contractorId"]
-            clinic_phone_number = extern_clinic_data[0]["phoneNumber"]
+            contractor_id = (
+                extern_clinic_data[0]["contractorId"]
+                if extern_clinic_data[0]["contractorId"]
+                else None
+            )
+            clinic_phone_number = (
+                extern_clinic_data[0]["phoneNumber"]
+                if extern_clinic_data[0]["phoneNumber"]
+                else None
+            )
 
         edi_portal_click_next_button(sleep_time=2)
 
@@ -126,8 +138,8 @@ def edi_portal_check_contractor_id(
                 search_box = wait_for_control(
                     auto.EditControl,
                     {"ClassName": class_name},
-                    search_depth=22,
-                    timeout=1,
+                    search_depth=50,
+                    timeout=5,
                 )
             except TimeoutError:
                 continue
@@ -136,15 +148,17 @@ def edi_portal_check_contractor_id(
 
         search_box.SetFocus()
         search_box_value_pattern = search_box.GetPattern(auto.PatternId.ValuePattern)
-        search_box_value_pattern.SetValue(contractor_id)
+        search_box_value_pattern.SetValue(
+            contractor_id if contractor_id else clinic_phone_number
+        )
         search_box.SendKeys("{ENTER}")
 
         time.sleep(sleep_time)
 
         table_dentists = wait_for_control(
             auto.TableControl,
-            {"AutomationId": "table_id1"},
-            search_depth=25,
+            {"AutomationId": "dtRecipients"},
+            search_depth=50,
         )
         grid_pattern = table_dentists.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
@@ -180,9 +194,18 @@ def edi_portal_click_next_button(sleep_time: int) -> None:
 
         edge_window.SetFocus()
 
+        root_web_area = wait_for_control(
+            edge_window.DocumentControl,
+            {"AutomationId": "RootWebArea"},
+            search_depth=30,
+        )
+
         try:
             next_button = wait_for_control(
-                edge_window.ButtonControl, {"Name": "Næste"}, search_depth=50, timeout=5
+                root_web_area.ButtonControl,
+                {"Name": "Næste"},
+                search_depth=50,
+                timeout=5,
             )
         except TimeoutError:
             next_button = None
@@ -190,7 +213,7 @@ def edi_portal_click_next_button(sleep_time: int) -> None:
         if not next_button:
             try:
                 next_button = wait_for_control(
-                    edge_window.ButtonControl,
+                    root_web_area.ButtonControl,
                     {"AutomationId": "patientInformationNextButton"},
                     search_depth=50,
                     timeout=5,
@@ -216,13 +239,27 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
         extern_clinic_data (dict): A dictionary containing the contractor ID and phone number.
     """
     try:
+        contractor_id = None
+        clinic_phone_number = None
+
+        # Handle Hasle Torv Clinic special case
         if (
             extern_clinic_data[0]["contractorId"] == "477052"
             or extern_clinic_data[0]["contractorId"] == "470678"
         ):
             contractor_id = "485055"
+            clinic_phone_number = "86135240"
         else:
-            contractor_id = extern_clinic_data[0]["contractorId"]
+            contractor_id = (
+                extern_clinic_data[0]["contractorId"]
+                if extern_clinic_data[0]["contractorId"]
+                else None
+            )
+            clinic_phone_number = (
+                extern_clinic_data[0]["phoneNumber"]
+                if extern_clinic_data[0]["phoneNumber"]
+                else None
+            )
 
         class_options = [
             "form-control filter_search",
@@ -234,8 +271,8 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
                 search_box = wait_for_control(
                     auto.EditControl,
                     {"ClassName": class_name},
-                    search_depth=22,
-                    timeout=1,
+                    search_depth=50,
+                    timeout=5,
                 )
             except TimeoutError:
                 continue
@@ -244,7 +281,9 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
 
         search_box.SetFocus()
         search_box_value_pattern = search_box.GetPattern(auto.PatternId.ValuePattern)
-        search_box_value_pattern.SetValue(contractor_id)
+        search_box_value_pattern.SetValue(
+            contractor_id if contractor_id else clinic_phone_number
+        )
         search_box.SendKeys("{ENTER}")
     except Exception as e:
         logger.error("Error while looking up contractor ID in EDI Portal: %s", e)
@@ -269,8 +308,8 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
 
         table_dentists = wait_for_control(
             auto.TableControl,
-            {"AutomationId": "table_id1"},
-            search_depth=25,
+            {"AutomationId": "dtRecipients"},
+            search_depth=50,
         )
         grid_pattern = table_dentists.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
@@ -319,7 +358,9 @@ def edi_portal_add_content(
 
         try:
             date_str = data["dateOfExamination"]
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+            )
             return date_obj.strftime("%B %Y").capitalize()
         except (ValueError, KeyError):
             logger.error("Error parsing date: %s", date_str)
@@ -344,50 +385,48 @@ def edi_portal_add_content(
             + queue_element.get("patient_name")
         )
     else:
-        subject = subject + " " + queue_element.get("patient_name")
+        subject = subject + " " + get_context_values("patient_name")
 
     body = edi_portal_content["body"]
     if not body:
         logger.error("Body is required.")
         raise ValueError("Body is required.")
 
-    examination_date = _get_formatted_date(data=queue_element)
-    risk_profile_map = {0: "Grøn", 1: "Gul", 2: "Rød", 3: "Ukendt"}
-    risc_profile = risk_profile_map.get(queue_element.get("riskProfil"))
-    dental_plan = queue_element.get("tandplejeplan", "Ukendt")
+    dental_plan = queue_element.get("tandplejeplan")
 
-    body_modified = re.sub(r"@examinationDate", examination_date, body)
-    body_modified = re.sub(r"@riscProfile", risc_profile, body_modified)
     if journal_continuation_text:
-        if "Besked til privat tandlæge - Frit valg: " in journal_continuation_text:
+        if config.JOURNAL_CONTINUATION_TEXT in journal_continuation_text:
             journal_continuation_text = journal_continuation_text.replace(
-                "Besked til privat tandlæge - Frit valg: ", ""
+                config.JOURNAL_CONTINUATION_TEXT, ""
             )
-        elif (
-            "Følgende oplysninger skal medsendes til privat tandlæge i forbindelse med udskrivning: "
-            in journal_continuation_text
-        ):
+        elif config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT in journal_continuation_text:
             journal_continuation_text = journal_continuation_text.replace(
-                "Følgende oplysninger skal medsendes til privat tandlæge i forbindelse med udskrivning: ",
+                config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT,
                 "",
             )
 
     if dental_plan:
-        body_modified = re.sub(
+        body = re.sub(
             r"@dentalPlan",
-            f"Anden information: {journal_continuation_text}",
-            body_modified,
+            f"{journal_continuation_text}",
+            body,
         )
     else:
-        body_modified = re.sub(r"@dentalPlan", "", body_modified)
+        body = re.sub(r"\n\s*@dentalPlan\s", "\n", body)
 
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
+        )
+
+        group = wait_for_control(
+            root_web_area.GroupControl,
+            {"AutomationId": "formId"},
+            search_depth=50,
         )
 
         subject_field = wait_for_control(
-            root_web_area.EditControl,
+            group.EditControl,
             {"AutomationId": "ContentTitleInput"},
             search_depth=50,
         )
@@ -397,10 +436,10 @@ def edi_portal_add_content(
         subject_field_value_pattern.SetValue(subject)
 
         body_field = wait_for_control(
-            root_web_area.EditControl, {"AutomationId": "ContentInput"}, search_depth=50
+            group.EditControl, {"AutomationId": "ContentInput"}, search_depth=50
         )
         body_field_value_pattern = body_field.GetPattern(auto.PatternId.ValuePattern)
-        body_field_value_pattern.SetValue(body_modified)
+        body_field_value_pattern.SetValue(body)
 
     except Exception as e:
         logger.error("Error while adding content in EDI Portal: %s", e)
@@ -430,7 +469,7 @@ def edi_portal_upload_files(path_to_files: str) -> None:
     upload_dialog.SendKeys("{ENTER}")
 
     root_web_area = wait_for_control(
-        auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+        auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
     )
 
     element_gone = False
@@ -479,7 +518,7 @@ def edi_portal_send_message() -> None:
     """
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
         )
 
         send_message_button = wait_for_control(
@@ -507,11 +546,11 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
     """
     try:
         root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=14
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
         )
 
         table_post_messages = wait_for_control(
-            auto.TableControl, {"AutomationId": "table_id1"}, search_depth=50
+            auto.TableControl, {"AutomationId": "dtSent"}, search_depth=50
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
@@ -525,7 +564,9 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             if not date_str:
                 return None
             try:
-                return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+                return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
+                    tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+                )
             except ValueError:
                 return None
 
@@ -536,10 +577,11 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
 
                 if subject == message:
                     parsed_date = _parse_date(date_str)
-                    if parsed_date is not None:
-                        if latest_date is None or parsed_date > latest_date:
-                            latest_matching_row = row
-                            latest_date = parsed_date
+                    if parsed_date is not None and (
+                        latest_date is None or parsed_date > latest_date
+                    ):
+                        latest_matching_row = row
+                        latest_date = parsed_date
 
             # Use the latest matching row if found
             if latest_matching_row is not None:
@@ -632,7 +674,9 @@ def get_constants(conn_string: str, name: str) -> list:
         with pyodbc.connect(conn_string) as conn, conn.cursor() as cursor:
             cursor.execute(query, params)
             columns = [column[0] for column in cursor.description]
-            constant_value = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            constant_value = [
+                dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+            ]
 
         return constant_value
 
@@ -657,7 +701,9 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         if not date_str:
             return None
         try:
-            return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
+                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+            )
         except ValueError:
             logger.error("Error parsing date: %s", date_str)
             return None
@@ -682,14 +728,18 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         )
 
         table_post_messages = wait_for_control(
-            next_test.TableControl, {"AutomationId": "table_id1"}, search_depth=23
+            next_test.TableControl,
+            {"AutomationId": "dtSent"},
+            search_depth=23,  # changed from table_id1
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
         success_message = False
 
         # Define one month ago here
-        one_month_ago = datetime.now() - timedelta(days=30)
+        local_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+        now = datetime.now(tz=local_tz)
+        one_month_ago = now - timedelta(days=30)
 
         if row_count > 0:
             for row in range(1, row_count):
