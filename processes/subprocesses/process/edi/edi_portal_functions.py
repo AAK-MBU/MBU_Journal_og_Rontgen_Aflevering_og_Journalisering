@@ -224,6 +224,7 @@ def edi_portal_click_next_button(sleep_time: int) -> None:
         if not next_button:
             logger.error("Next button not found in EDI Portal")
             raise RuntimeError("Next button not found in EDI Portal")
+        next_button.ScrollIntoView()
         next_button.Click(simulateMove=False, waitTime=0)
         time.sleep(sleep_time)
     except Exception as e:
