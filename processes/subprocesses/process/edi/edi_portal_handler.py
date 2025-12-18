@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -163,6 +164,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
     # Always run the last two steps
     for step in pipeline[-2:]:
         try:
+            time.sleep(3)
             step(context)
         except Exception as e:
             logger.error(
