@@ -285,6 +285,7 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
             contractor_id if contractor_id else clinic_phone_number
         )
         search_box.SendKeys("{ENTER}")
+        time.sleep(3)
     except Exception as e:
         logger.error("Error while looking up contractor ID in EDI Portal: %s", e)
         raise
