@@ -1,6 +1,6 @@
 [project]
 name = "MBU_Journal_og_Rontgen_Aflevering_og_Journalisering"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automated RPA process for transferring medical records and x-ray files to private dental clinics via EDI Portal"
 tags = ["ats"]
 readme = "README.md"
