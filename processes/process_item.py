@@ -33,6 +33,7 @@ from processes.subprocesses.process.edi.get_files_for_edi_portal import (
 from processes.subprocesses.process.romexis.romexis_images_handler import (
     get_images_from_romexis,
 )
+from processes.subprocesses.reset.clean_up import release_keys
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,9 @@ def process_item(item_data: dict, item_id: int) -> None:
     """Function to handle item processing"""
 
     try:
+        # Release all keyboard hooks in case they are stuck
+        release_keys()
+
         # Validate clinical input data
         _validate_input_data(item_data)
 
