@@ -595,10 +595,38 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             raise RuntimeError("Message not sent.")
 
         menu_button.Click(simulateMove=False, waitTime=0)
+        time.sleep(3)
+
+        menu_popup = None
+
+        try:
+            menu_popup = wait_for_control(
+                root_web_area.ListControl,
+                {"ClassName": "dropdown-menu show"},
+                search_depth=50,
+                timeout=15,
+            )
+        except TimeoutError:
+            pass
+
+        if not menu_popup:
+            try:
+                menu_popup = wait_for_control(
+                    root_web_area.ListControl,
+                    {"ClassName": "dropdown-menu"},
+                    search_depth=50,
+                    timeout=15,
+                )
+            except TimeoutError:
+                pass
+
+        if not menu_popup:
+            raise TimeoutError("Could not find dropdown menu with any method")
+
         menu_popup = wait_for_control(
             root_web_area.ListControl,
             {"ClassName": "dropdown-menu show"},
-            search_depth=14,
+            search_depth=50,
         )
         menu_popup_item = wait_for_control(
             menu_popup.ListItemControl,
@@ -731,7 +759,7 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         table_post_messages = wait_for_control(
             next_test.TableControl,
             {"AutomationId": "dtSent"},
-            search_depth=23,  # changed from table_id1
+            search_depth=50,  # changed from table_id1
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
