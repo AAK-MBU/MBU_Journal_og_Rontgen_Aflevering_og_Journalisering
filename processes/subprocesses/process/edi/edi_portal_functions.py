@@ -647,8 +647,10 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             logger.error("Message not sent.")
             raise RuntimeError("Message not sent.")
 
-        menu_button = grid_pattern.GetItem(latest_matching_row, 10)
+        menu_button = grid_pattern.GetItem(latest_matching_row, 9)
         menu_button.Click(simulateMove=False, waitTime=0)
+
+        # Wait for the menu popup to appear
         time.sleep(3)
 
         menu_popup = _get_menu_popup(root_web_area)
