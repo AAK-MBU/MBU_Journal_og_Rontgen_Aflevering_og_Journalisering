@@ -20,7 +20,7 @@ ROMEXIS_ROOT_PATH = r"\\SRVAPPROMEX04\romexis_images$"
 # Document
 # ----------------------
 DOCUMENT_TYPE = "Udskrivning - 22 år!$#"
-JOURNAL_CONTINUATION_TEXT = "Besked til privat tandklinik: "
+JOURNAL_CONTINUATION_TEXT = "Besked til privat tandklinik - Udskrivning 22 år: "
 JOURNAL_CONTINUATION_REPLACEMENT_TEXT = "Følgende oplysninger skal medsendes til privat tandlæge i forbindelse med udskrivning: "
 
 ADM_NOTE = "Administrativt notat 'Udskrivning 22 år gennemført af robot. Sendt information, journal og billedmateriale til privat tandklinik via EDI-portal. Se dokumentskab'"
