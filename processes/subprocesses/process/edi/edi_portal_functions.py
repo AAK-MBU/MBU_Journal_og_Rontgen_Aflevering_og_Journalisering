@@ -567,7 +567,7 @@ def _find_latest_matching_message(
         return None
 
     for row in range(1, row_count):
-        message = grid_pattern.GetItem(row, 5).Name or ""
+        message = grid_pattern.GetItem(row, 6).Name or ""
         date_str = grid_pattern.GetItem(row, 1).Name or ""
 
         if subject != message:
@@ -647,7 +647,7 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             logger.error("Message not sent.")
             raise RuntimeError("Message not sent.")
 
-        menu_button = grid_pattern.GetItem(latest_matching_row, 9)
+        menu_button = grid_pattern.GetItem(latest_matching_row, 10)
         menu_button.Click(simulateMove=False, waitTime=0)
 
         # Wait for the menu popup to appear
@@ -799,7 +799,7 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
 
         if row_count > 0:
             for row in range(1, row_count):
-                message = grid_pattern.GetItem(row, 5).Name or ""
+                message = grid_pattern.GetItem(row, 6).Name or ""
                 date_str = grid_pattern.GetItem(row, 1).Name or ""
 
                 # Check if message contains the target text
