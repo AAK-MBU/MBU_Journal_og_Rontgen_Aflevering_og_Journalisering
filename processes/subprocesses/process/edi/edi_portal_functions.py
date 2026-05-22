@@ -374,19 +374,12 @@ def edi_portal_add_content(
         raise ValueError("Subject is required.")
 
     if extern_clinic_data[0]["contractorId"] == "477052":
-        subject = (
-            subject
-            + " på Tandklinikken Hasle Torv "
-            + get_context_values("patient_name")
-        )
+        subject = subject + " på Tandklinikken Hasle Torv "
     elif extern_clinic_data[0]["contractorId"] == "470678":
-        subject = (
-            subject
-            + " på Tandklinikken Brobjergparken "
-            + get_context_values("patient_name")
-        )
-    else:
-        subject = subject + " " + get_context_values("patient_name")
+        subject = subject + " på Tandklinikken Brobjergparken "
+
+    # Truncate subject to 66 characters to fit EDI portal limitations
+    subject = subject[:66]
 
     body = edi_portal_content["body"]
     if not body:
