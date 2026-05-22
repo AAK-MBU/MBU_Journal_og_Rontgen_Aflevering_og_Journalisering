@@ -377,13 +377,13 @@ def edi_portal_add_content(
         subject = (
             subject
             + " på Tandklinikken Hasle Torv "
-            + queue_element.get("patient_name")
+            + get_context_values("patient_name")
         )
     elif extern_clinic_data[0]["contractorId"] == "470678":
         subject = (
             subject
             + " på Tandklinikken Brobjergparken "
-            + queue_element.get("patient_name")
+            + get_context_values("patient_name")
         )
     else:
         subject = subject + " " + get_context_values("patient_name")
