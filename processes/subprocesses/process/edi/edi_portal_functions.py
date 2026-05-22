@@ -15,7 +15,6 @@ import pyodbc
 import uiautomation as auto
 
 from helpers import config
-from helpers.context_handler import get_context_values
 
 logger = logging.getLogger(__name__)
 
