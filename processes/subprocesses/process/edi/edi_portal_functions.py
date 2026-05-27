@@ -528,10 +528,13 @@ def edi_portal_send_message() -> None:
 
 def _parse_date(date_str: str) -> datetime | None:
     """Parse date from format like '11-09-2025 13:28'."""
+    # Local timezone used to make parsed EDI portal timestamps timezone-aware.
+    LOCAL_TZ = datetime.now().astimezone().tzinfo
+
     if not date_str:
         return None
     try:
-        return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+        return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(tzinfo=LOCAL_TZ)
     except ValueError:
         return None
 
@@ -611,11 +614,14 @@ def _trigger_save_as_pdf(menu_popup) -> None:
 
 def _wait_for_receipt_download(existing_receipts: set, timeout: int = 120) -> str:
     """Wait for a new 'Meddelelse*.pdf' to finish downloading and return its path."""
+    # Seconds to wait for a download to START (crdownload file to appear).
+    DOWNLOAD_START_TIMEOUT = 30
+
     download_path = Path.home() / "Downloads"
     start_time = time.time()
 
     # Wait for download to START (crdownload appears).
-    while time.time() - start_time < 30:
+    while time.time() - start_time < DOWNLOAD_START_TIMEOUT:
         if next(download_path.glob("Meddelelse*.crdownload"), None):
             break
         time.sleep(0.5)
