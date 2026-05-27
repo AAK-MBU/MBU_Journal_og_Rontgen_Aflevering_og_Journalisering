@@ -658,9 +658,10 @@ def _wait_for_receipt_download(
     Raises:
         FileNotFoundError: If no receipt file is found within the timeout period.
     """
+    _DOWNLOAD_TIMEOUT = 30
     start_time = time.time()
 
-    while time.time() - start_time < 30:
+    while time.time() - start_time < _DOWNLOAD_TIMEOUT:
         if next(download_path.glob("Meddelelse*.crdownload"), None):
             break
         time.sleep(0.5)
