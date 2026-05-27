@@ -526,24 +526,37 @@ def edi_portal_send_message() -> None:
         raise
 
 
-def _parse_date(date_str: str) -> datetime | None:
-    """Parse date from format like '11-09-2025 13:28'."""
-    # Local timezone used to make parsed EDI portal timestamps timezone-aware.
-    LOCAL_TZ = datetime.now().astimezone().tzinfo
+def _find_latest_matching_message(
+    grid_pattern, row_count: int, subject: str
+) -> int | None:
+    """
+    Finds the latest matching message row based on the subject.
 
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(tzinfo=LOCAL_TZ)
-    except ValueError:
-        return None
+    Args:
+        grid_pattern: The grid pattern of the table.
+        row_count (int): The number of rows in the table.
+        subject (str): The subject to match.
 
+    Returns:
+        int | None: The row index of the latest matching message, or None if not found.
+    """
 
-def _find_latest_matching_row(grid_pattern, subject: str) -> int | None:
-    """Return the index of the most recent row whose message matches subject."""
-    row_count = grid_pattern.RowCount
+    def _parse_date(date_str: str) -> datetime | None:
+        """Parse date from format like '11-09-2025 13:28'"""
+        if not date_str:
+            return None
+        try:
+            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
+                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
+            )
+        except ValueError:
+            return None
+
     latest_matching_row = None
     latest_date = None
+
+    if row_count <= 0:
+        return None
 
     for row in range(1, row_count):
         message = grid_pattern.GetItem(row, 6).Name or ""
@@ -553,6 +566,7 @@ def _find_latest_matching_row(grid_pattern, subject: str) -> int | None:
             continue
 
         parsed_date = _parse_date(date_str)
+
         if parsed_date is None:
             continue
 
@@ -563,13 +577,22 @@ def _find_latest_matching_row(grid_pattern, subject: str) -> int | None:
     return latest_matching_row
 
 
-def _open_dropdown_menu(root_web_area, menu_button):
-    """Click the row's menu button and return the opened dropdown menu control."""
-    menu_button.Click(simulateMove=False, waitTime=0)
-    time.sleep(3)
+def _get_menu_popup(root_web_area) -> auto.ListControl:
+    """
+    Helper function to get the menu popup control.
 
-    # Try the fully-shown class first, then fall back to the base class.
-    for class_name in ("dropdown-menu show", "dropdown-menu"):
+    Args:
+        root_web_area: The root web area control.
+
+    Returns:
+        auto.ListControl: The menu popup control.
+
+    Raises:
+        TimeoutError: If the menu popup is not found.
+    """
+    class_names = ["dropdown-menu show", "dropdown-menu"]
+
+    for class_name in class_names:
         try:
             menu_popup = wait_for_control(
                 root_web_area.ListControl,
@@ -578,67 +601,11 @@ def _open_dropdown_menu(root_web_area, menu_button):
                 timeout=15,
             )
             if menu_popup:
-                break
+                return menu_popup
         except TimeoutError:
-            menu_popup = None
+            continue
 
-    if not menu_popup:
-        raise TimeoutError("Could not find dropdown menu with any method")
-
-    # Re-resolve once the menu is fully shown to get a stable reference.
-    return wait_for_control(
-        root_web_area.ListControl,
-        {"ClassName": "dropdown-menu show"},
-        search_depth=50,
-    )
-
-
-def _trigger_save_as_pdf(menu_popup) -> None:
-    """Navigate the dropdown and click the 'Gem som PDF' (save as PDF) item."""
-    menu_popup_item = wait_for_control(
-        menu_popup.ListItemControl,
-        {"Name": " Gem"},
-        search_depth=50,
-    )
-    menu_popup_item.SetFocus()
-    pos = menu_popup_item.GetClickablePoint()
-    auto.MoveTo(pos[0], pos[1], moveSpeed=0.5, waitTime=0)
-
-    menu_popup_item_save = wait_for_control(
-        menu_popup.HyperlinkControl,
-        {"Name": "Gem som PDF"},
-        search_depth=50,
-    )
-    menu_popup_item_save.Click(simulateMove=False, waitTime=0)
-
-
-def _wait_for_receipt_download(existing_receipts: set, timeout: int = 120) -> str:
-    """Wait for a new 'Meddelelse*.pdf' to finish downloading and return its path."""
-    # Seconds to wait for a download to START (crdownload file to appear).
-    DOWNLOAD_START_TIMEOUT = 30
-
-    download_path = Path.home() / "Downloads"
-    start_time = time.time()
-
-    # Wait for download to START (crdownload appears).
-    while time.time() - start_time < DOWNLOAD_START_TIMEOUT:
-        if next(download_path.glob("Meddelelse*.crdownload"), None):
-            break
-        time.sleep(0.5)
-
-    # Wait for download to FINISH (crdownload disappears, pdf appears).
-    while time.time() - start_time < timeout:
-        new_receipts = set(download_path.glob("Meddelelse*.pdf")) - existing_receipts
-        if new_receipts:
-            receipt = max(new_receipts, key=lambda p: p.stat().st_mtime)
-            print(f"Receipt downloaded: {receipt}")
-            return str(receipt)
-        time.sleep(1)
-
-    raise FileNotFoundError(
-        "No file starting with 'Meddelelse' and ending with '.pdf' was found "
-        "within the timeout period."
-    )
+    raise TimeoutError("Could not find dropdown menu with any method")
 
 
 def edi_portal_get_journal_sent_receip(subject: str) -> str:
@@ -661,29 +628,55 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             auto.TableControl, {"AutomationId": "dtSent"}, search_depth=50
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
+        row_count = grid_pattern.RowCount
 
-        latest_matching_row = None
-        if grid_pattern.RowCount > 0:
-            latest_matching_row = _find_latest_matching_row(grid_pattern, subject)
+        # Find the latest matching message
+        latest_matching_row = _find_latest_matching_message(
+            grid_pattern, row_count, subject
+        )
 
         if latest_matching_row is None:
-            print("Message not sent.")
+            logger.error("Message not sent.")
             raise RuntimeError("Message not sent.")
 
-        print(f"Using latest matching row {latest_matching_row}")
         menu_button = grid_pattern.GetItem(latest_matching_row, 10)
+        menu_button.Click(simulateMove=False, waitTime=0)
 
-        menu_popup = _open_dropdown_menu(root_web_area, menu_button)
+        # Wait for the menu popup to appear
+        time.sleep(3)
+
+        menu_popup = _get_menu_popup(root_web_area)
+
+        menu_popup_item = wait_for_control(
+            menu_popup.ListItemControl,
+            {"Name": " Gem"},
+            search_depth=50,
+        )
+        menu_popup_item.SetFocus()
+        pos = menu_popup_item.GetClickablePoint()
+        auto.MoveTo(pos[0], pos[1], moveSpeed=0.5, waitTime=0)
+        menu_popup_item_save = wait_for_control(
+            menu_popup.HyperlinkControl,
+            {"Name": "Gem som PDF"},
+            search_depth=50,
+        )
+        menu_popup_item_save.Click(simulateMove=False, waitTime=0)
 
         download_path = Path.home() / "Downloads"
-        existing_receipts = set(download_path.glob("Meddelelse*.pdf"))
+        timeout = 60
+        start_time = time.time()
 
-        _trigger_save_as_pdf(menu_popup)
+        while time.time() - start_time < timeout:
+            receipt = next(download_path.glob("Meddelelse*.pdf"), None)
+            if receipt is not None:
+                return receipt
+            time.sleep(1)
 
-        return _wait_for_receipt_download(existing_receipts)
-
+        raise FileNotFoundError(
+            "No file starting with 'Meddelelse' and ending with '.pdf' was found within the timeout period."
+        )
     except Exception as e:
-        print(f"Error while downloading the receipt from EDI Portal: {e}")
+        logger.error("Error while downloading the receipt from EDI Portal: %s", e)
         raise
 
 
