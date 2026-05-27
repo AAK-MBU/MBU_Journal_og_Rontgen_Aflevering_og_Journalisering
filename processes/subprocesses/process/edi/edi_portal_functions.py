@@ -526,88 +526,6 @@ def edi_portal_send_message() -> None:
         raise
 
 
-def _find_latest_matching_message(
-    grid_pattern, row_count: int, subject: str
-) -> int | None:
-    """
-    Finds the latest matching message row based on the subject.
-
-    Args:
-        grid_pattern: The grid pattern of the table.
-        row_count (int): The number of rows in the table.
-        subject (str): The subject to match.
-
-    Returns:
-        int | None: The row index of the latest matching message, or None if not found.
-    """
-
-    def _parse_date(date_str: str) -> datetime | None:
-        """Parse date from format like '11-09-2025 13:28'"""
-        if not date_str:
-            return None
-        try:
-            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
-                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
-            )
-        except ValueError:
-            return None
-
-    latest_matching_row = None
-    latest_date = None
-
-    if row_count <= 0:
-        return None
-
-    for row in range(1, row_count):
-        message = grid_pattern.GetItem(row, 6).Name or ""
-        date_str = grid_pattern.GetItem(row, 1).Name or ""
-
-        if subject != message:
-            continue
-
-        parsed_date = _parse_date(date_str)
-
-        if parsed_date is None:
-            continue
-
-        if latest_date is None or parsed_date > latest_date:
-            latest_matching_row = row
-            latest_date = parsed_date
-
-    return latest_matching_row
-
-
-def _get_menu_popup(root_web_area) -> auto.ListControl:
-    """
-    Helper function to get the menu popup control.
-
-    Args:
-        root_web_area: The root web area control.
-
-    Returns:
-        auto.ListControl: The menu popup control.
-
-    Raises:
-        TimeoutError: If the menu popup is not found.
-    """
-    class_names = ["dropdown-menu show", "dropdown-menu"]
-
-    for class_name in class_names:
-        try:
-            menu_popup = wait_for_control(
-                root_web_area.ListControl,
-                {"ClassName": class_name},
-                search_depth=50,
-                timeout=15,
-            )
-            if menu_popup:
-                return menu_popup
-        except TimeoutError:
-            continue
-
-    raise TimeoutError("Could not find dropdown menu with any method")
-
-
 def _find_latest_sent_row(grid_pattern, row_count: int, subject: str) -> int | None:
     """
     Scans the sent messages table and returns the row index of the most
@@ -740,10 +658,10 @@ def _wait_for_receipt_download(
     Raises:
         FileNotFoundError: If no receipt file is found within the timeout period.
     """
-    _DOWNLOAD_START_TIMEOUT = 30
+    _DOWNLOAD_TIMEOUT = 30
     start_time = time.time()
 
-    while time.time() - start_time < _DOWNLOAD_START_TIMEOUT:
+    while time.time() - start_time < _DOWNLOAD_TIMEOUT:
         if next(download_path.glob("Meddelelse*.crdownload"), None):
             break
         time.sleep(0.5)

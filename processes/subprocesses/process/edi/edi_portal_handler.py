@@ -78,12 +78,14 @@ def edi_portal_handler(context: EdiContext) -> str | None:
 
     patient_name = get_context_values("patient_name")
     base_subject = context.value_data["edi_portal_content"]["subject"]
+
     if context.extern_clinic_data[0]["contractorId"] == "477052":
-        subject = base_subject + " på Tandklinikken Hasle Torv " + patient_name
+        subject = base_subject + " på Tandklinikken Hasle Torv"
     elif context.extern_clinic_data[0]["contractorId"] == "470678":
-        subject = base_subject + " på Tandklinikken Brobjergparken " + patient_name
-    else:
-        subject = base_subject + " " + patient_name
+        subject = base_subject + " på Tandklinikken Brobjergparken"
+
+    # Truncate subject to 66 characters to fit EDI portal limitations
+    subject = subject[:66]
 
     context.subject = subject
 
