@@ -3,7 +3,6 @@ This module contains functions to interact with the EDI portal.
 These functions should be moved to mbu_dev_shared_components/solteqtand/application/edi_portal.py
 """
 
-import locale
 import logging
 import re
 import time
@@ -325,6 +324,30 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
         raise
 
 
+def _subject_build(subject: str, contractor_id: str) -> str:
+    """ """
+    if not subject:
+        logger.error("Subject is missing.")
+        raise ValueError("Subject is missing.")
+
+    if not contractor_id:
+        logger.error("Contractor ID is missing.")
+        raise ValueError("Contractor ID is missing.")
+
+    if contractor_id == "477052":
+        subject = subject + " på Tandklinikken Hasle Torv"
+    elif contractor_id == "470678":
+        subject = subject + " på Tandklinikken Brobjergparken"
+
+    MAX_SUBJECT_LENGTH = 66
+
+    if len(subject) > MAX_SUBJECT_LENGTH:
+        logger.error("Subject exceeds 66 characters: %d", len(subject))
+        raise ValueError(f"Subject exceeds 66 characters: {len(subject)}")
+
+    return subject
+
+
 def edi_portal_add_content(
     queue_element: dict,
     edi_portal_content: dict,
@@ -340,45 +363,10 @@ def edi_portal_add_content(
         journal_continuation_text (str | None): Additional text to be added to the content.
     """
 
-    def _get_formatted_date(data) -> str:
-        """
-        Helper function to format the date from the data dictionary.
-        Args:
-            data (dict): The data dictionary containing the date information.
-        Returns:
-            str: The formatted date string or an error message.
-        """
-        try:
-            locale.setlocale(locale.LC_TIME, "da_DK.UTF-8")
-        except locale.Error:
-            return "Error setting locale to Danish"
-
-        if data.get("ukendt_dato") is True:
-            return "Ukendt"
-
-        try:
-            date_str = data["dateOfExamination"]
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(
-                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
-            )
-            return date_obj.strftime("%B %Y").capitalize()
-        except (ValueError, KeyError):
-            logger.error("Error parsing date: %s", date_str)
-            return "Error parsing date"
-
-    subject = edi_portal_content["subject"]
-
-    if not subject:
-        logger.error("Subject is required.")
-        raise ValueError("Subject is required.")
-
-    if extern_clinic_data[0]["contractorId"] == "477052":
-        subject = subject + " på Tandklinikken Hasle Torv "
-    elif extern_clinic_data[0]["contractorId"] == "470678":
-        subject = subject + " på Tandklinikken Brobjergparken "
-
-    # Truncate subject to 66 characters to fit EDI portal limitations
-    subject = subject[:66]
+    subject = _subject_build(
+        subject=edi_portal_content["subject"],
+        contractor_id=extern_clinic_data[0]["contractorId"],
+    )
 
     body = edi_portal_content["body"]
     if not body:
