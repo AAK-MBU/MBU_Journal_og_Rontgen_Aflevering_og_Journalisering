@@ -367,18 +367,26 @@ def edi_portal_add_content(
             return "Error parsing date"
 
     subject = edi_portal_content["subject"]
+    extern_contractor_id = extern_clinic_data[0]["contractorId"]
 
     if not subject:
-        logger.error("Subject is required.")
-        raise ValueError("Subject is required.")
+        logger.error("Subject is missing.")
+        raise ValueError("Subject is missing.")
 
-    if extern_clinic_data[0]["contractorId"] == "477052":
-        subject = subject + " på Tandklinikken Hasle Torv "
-    elif extern_clinic_data[0]["contractorId"] == "470678":
-        subject = subject + " på Tandklinikken Brobjergparken "
+    if not extern_contractor_id:
+        logger.error("Contractor ID is missing.")
+        raise ValueError("Contractor ID is missing.")
 
-    # Truncate subject to 66 characters to fit EDI portal limitations
-    subject = subject[:66]
+    if extern_contractor_id == "477052":
+        subject = subject + " på Tandklinikken Hasle Torv"
+    elif extern_contractor_id == "470678":
+        subject = subject + " på Tandklinikken Brobjergparken"
+
+    MAX_SUBJECT_LENGTH = 66
+
+    if len(subject) > MAX_SUBJECT_LENGTH:
+        logger.error("Subject exceeds 66 characters: %d", len(subject))
+        raise ValueError(f"Subject exceeds 66 characters: {len(subject)}")
 
     body = edi_portal_content["body"]
     if not body:
