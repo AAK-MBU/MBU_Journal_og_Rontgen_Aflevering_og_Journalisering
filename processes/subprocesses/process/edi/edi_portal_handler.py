@@ -7,13 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from mbu_rpa_core.exceptions import ProcessError
-
 from helpers.context_handler import get_context_values
 from helpers.credential_constants import get_rpa_constant
 from processes.subprocesses.process.edi import (
     edi_portal_functions as edifuncs,
 )
+
+from .edi_portal_functions import _subject_build
 
 logger = logging.getLogger(__name__)
 
@@ -78,28 +78,10 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         logger.error("Invalid or missing 'edi_portal_content' data in constant.")
         raise RuntimeError("Invalid or missing 'edi_portal_content' data in constant.")
 
-    subject = context.value_data["edi_portal_content"]["subject"]
-    extern_contractor_id = context.extern_clinic_data[0]["contractorId"]
-
-    if not subject:
-        logger.error("Subject is missing.")
-        raise ValueError("Subject is missing.")
-
-    if not extern_contractor_id:
-        logger.error("Contractor ID is missing.")
-        raise ValueError("Contractor ID is missing.")
-
-    if extern_contractor_id == "477052":
-        subject = subject + " på Tandklinikken Hasle Torv"
-    elif extern_contractor_id == "470678":
-        subject = subject + " på Tandklinikken Brobjergparken"
-
-    MAX_SUBJECT_LENGTH = 66
-
-    if len(subject) > MAX_SUBJECT_LENGTH:
-        logger.error("Subject exceeds 66 characters: %d", len(subject))
-        raise ValueError(f"Subject exceeds 66 characters: {len(subject)}")
-
+    subject = _subject_build(
+        subject=context.value_data["edi_portal_content"]["subject"],
+        contractor_id=context.extern_clinic_data[0]["contractorId"],
+    )
     context.subject = subject
 
     patient_name = get_context_values("patient_name")
