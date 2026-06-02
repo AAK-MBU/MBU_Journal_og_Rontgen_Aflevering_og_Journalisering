@@ -13,6 +13,8 @@ from processes.subprocesses.process.edi import (
     edi_portal_functions as edifuncs,
 )
 
+from .edi_portal_functions import _subject_build
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,18 +78,13 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         logger.error("Invalid or missing 'edi_portal_content' data in constant.")
         raise RuntimeError("Invalid or missing 'edi_portal_content' data in constant.")
 
-    patient_name = get_context_values("patient_name")
-    base_subject = context.value_data["edi_portal_content"]["subject"]
-
-    if context.extern_clinic_data[0]["contractorId"] == "477052":
-        subject = base_subject + " på Tandklinikken Hasle Torv"
-    elif context.extern_clinic_data[0]["contractorId"] == "470678":
-        subject = base_subject + " på Tandklinikken Brobjergparken"
-
-    # Truncate subject to 66 characters to fit EDI portal limitations
-    subject = subject[:66]
-
+    subject = _subject_build(
+        subject=context.value_data["edi_portal_content"]["subject"],
+        contractor_id=context.extern_clinic_data[0]["contractorId"],
+    )
     context.subject = subject
+
+    patient_name = get_context_values("patient_name")
 
     # Define the ordered list of pipeline steps
     pipeline: list[Step] = [
