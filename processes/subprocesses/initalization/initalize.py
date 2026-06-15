@@ -116,6 +116,7 @@ class InitializationChecks:
             logger.info("Checking if administrative note is set...")
             if not result:
                 logger.info("Found no administrative note.")
+            logger.info("Administrative note i set.")
 
             return result
         except ProcessError as e:
@@ -140,7 +141,7 @@ class InitializationChecks:
 
             logger.info("Checking contractor data...")
             if get_context_values("extern_clinic_data") is None:
-                raise BusinessError("Extern clinic data is not set.")
+                raise ValueError("Extern clinic data is not set.")
             result = solteq_app.edi_portal_check_contractor_id(
                 extern_clinic_data=get_context_values("extern_clinic_data")
                 if get_context_values("extern_clinic_data")
@@ -212,11 +213,13 @@ def initalization_checks_and_get_data(queue_element_data) -> None:
 
     # Get administrative note
     set_context_values(administrative_note=init_checks_obj.get_administrative_note())
+
     administrative_note = get_context_values("administrative_note")
     if administrative_note:
         description = administrative_note[0].get("Beskrivelse")
+        logger.info("administrative_note_description: %s", description)
     set_context_values(
-        administrative_note_description=description if administrative_note else []
+        administrative_note_description=description if administrative_note else None
     )
 
     # Check if contractor phone number from EDI-Portal matches the one in Solteq Tand

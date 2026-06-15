@@ -102,7 +102,6 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
         # Add journal content
         lambda ctx: edifuncs.edi_portal_add_content(
-            queue_element=ctx.queue_element,
             edi_portal_content=ctx.value_data["edi_portal_content"],  # type: ignore
             journal_continuation_text=ctx.journal_note,
             extern_clinic_data=ctx.extern_clinic_data,
