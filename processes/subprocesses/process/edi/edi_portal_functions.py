@@ -5,10 +5,13 @@ These functions should be moved to mbu_dev_shared_components/solteqtand/applicat
 
 import logging
 import re
+import shutil
+import subprocess
 import time
 import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pyodbc
 import uiautomation as auto
@@ -16,6 +19,14 @@ import uiautomation as auto
 from helpers import config
 
 logger = logging.getLogger(__name__)
+
+
+def _kill_adobe() -> None:
+    """Force-kills any running Adobe Acrobat/Reader processes."""
+    subprocess.call(["taskkill", "/F", "/IM", "Acrobat.exe"], stderr=subprocess.DEVNULL)
+    subprocess.call(
+        ["taskkill", "/F", "/IM", "AcroRd32.exe"], stderr=subprocess.DEVNULL
+    )
 
 
 def wait_for_control(
@@ -168,7 +179,7 @@ def edi_portal_check_contractor_id(
 
         if row_count > 0:
             for row in range(row_count):
-                phone_number = grid_pattern.GetItem(row, 4).Name
+                phone_number = grid_pattern.GetItem(row, 5).Name
                 if phone_number == clinic_phone_number:
                     is_phone_number_match = True
                     break
@@ -315,7 +326,7 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
 
         if row_count > 0:
             for row in range(row_count):
-                phone_number = grid_pattern.GetItem(row, 4).Name
+                phone_number = grid_pattern.GetItem(row, 5).Name
                 if phone_number == clinic_phone_number:
                     grid_pattern.GetItem(row, 0).Click(simulateMove=False, waitTime=0)
                     break
@@ -325,7 +336,23 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
 
 
 def _subject_build(subject: str, contractor_id: str) -> str:
-    """ """
+    """Build the EDI portal subject line.
+
+    Appends a clinic-specific suffix based on the contractor ID and
+    verifies the result fits the EDI portal's character limit.
+
+    Args:
+        subject: The base subject text.
+        contractor_id: Contractor ID used to select the clinic suffix.
+
+    Returns:
+        The final subject line.
+
+    Raises:
+        ValueError: If the subject or contractor ID is missing, or if the
+            final subject exceeds 66 characters.
+    """
+
     if not subject:
         logger.error("Subject is missing.")
         raise ValueError("Subject is missing.")
@@ -349,51 +376,76 @@ def _subject_build(subject: str, contractor_id: str) -> str:
 
 
 def edi_portal_add_content(
-    queue_element: dict,
-    edi_portal_content: dict,
-    extern_clinic_data: dict,
+    edi_portal_content: dict[str, Any],
+    extern_clinic_data: list[dict[str, str]],
     journal_continuation_text: str | None = None,
 ) -> None:
     """
     Adds content to the EDI portal based on the provided queue element and content template.
 
     Args:
-        queue_element (dict): The queue element containing data for the content.
-        edi_portal_content (dict): The content template for the EDI portal.
-        journal_continuation_text (str | None): Additional text to be added to the content.
+        edi_portal_content:
+            Content template containing the keys "subject" and "body".
+        extern_clinic_data:
+            External clinic data. The first item must contain "contractorId".
+        journal_continuation_text:
+            Optional text used to replace the @dentalPlan placeholder.
+
+    Raises:
+        ValueError:
+            If required content or clinic data is missing.
     """
 
-    subject = _subject_build(
-        subject=edi_portal_content["subject"],
-        contractor_id=extern_clinic_data[0]["contractorId"],
-    )
+    subject_template = edi_portal_content["subject"]
+    if not subject_template:
+        logger.error("Subject is required.")
+        raise ValueError("Subject is required.")
 
     body = edi_portal_content["body"]
     if not body:
         logger.error("Body is required.")
         raise ValueError("Body is required.")
 
-    dental_plan = queue_element.get("tandplejeplan")
+    if not extern_clinic_data:
+        logger.error("External clinic data is required.")
+        raise ValueError("External clinic data is required.")
+
+    contractor_id = extern_clinic_data[0]["contractorId"]
+    if not contractor_id:
+        logger.error("ContractorId is required.")
+        raise ValueError("ContractorId is required.")
+
+    subject = _subject_build(
+        subject=subject_template,
+        contractor_id=contractor_id,
+    )
 
     if journal_continuation_text:
-        if config.JOURNAL_CONTINUATION_TEXT in journal_continuation_text:
-            journal_continuation_text = journal_continuation_text.replace(
-                config.JOURNAL_CONTINUATION_TEXT, ""
-            )
-        elif config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT in journal_continuation_text:
-            journal_continuation_text = journal_continuation_text.replace(
-                config.JOURNAL_CONTINUATION_REPLACEMENT_TEXT,
-                "",
-            )
+        prefix = config.JOURNAL_CONTINUATION_TEXT
 
-    if dental_plan:
-        body = re.sub(
-            r"@dentalPlan",
-            f"{journal_continuation_text}",
-            body,
+        if prefix:
+            journal_continuation_text = journal_continuation_text.removeprefix(prefix)
+
+        journal_continuation_text = journal_continuation_text.strip()
+
+        body = body.replace(
+            "@dentalPlan",
+            journal_continuation_text,
         )
     else:
-        body = re.sub(r"\n\s*@dentalPlan\s", "\n", body)
+        body = re.sub(
+            r"^[ \t]*@dentalPlan[ \t]*(?:\r?\n)?",
+            "",
+            body,
+            flags=re.MULTILINE,
+        )
+
+    logger.info(
+        "EDI portal content prepared. Journal continuation provided: %s",
+        bool(journal_continuation_text),
+    )
+    logger.info("body: %s", body)
+    logger.info("BREAKPOINT")
 
     try:
         root_web_area = wait_for_control(
@@ -548,7 +600,7 @@ def _find_latest_matching_message(
 
     for row in range(1, row_count):
         message = grid_pattern.GetItem(row, 6).Name or ""
-        date_str = grid_pattern.GetItem(row, 1).Name or ""
+        date_str = grid_pattern.GetItem(row, 2).Name or ""
 
         if subject != message:
             continue
@@ -608,90 +660,151 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
         RuntimeError: If the message was not sent successfully.
     """
     try:
-        root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
-        )
-
         table_post_messages = wait_for_control(
             auto.TableControl, {"AutomationId": "dtSent"}, search_depth=50
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
 
-        # Find the latest matching message
-        latest_matching_row = _find_latest_matching_message(
-            grid_pattern, row_count, subject
-        )
+        success_message = False
+        latest_matching_row = None
+        latest_date = None
 
-        if latest_matching_row is None:
+        def _parse_date(date_str: str) -> datetime | None:
+            """Parse date from format like '11-09-2025 13:28'"""
+            if not date_str:
+                return None
+            try:
+                return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+            except ValueError:
+                return None
+
+        if row_count > 0:
+            for row in range(1, row_count):
+                message = grid_pattern.GetItem(row, 6).Name or ""
+                date_str = grid_pattern.GetItem(row, 2).Name or ""
+
+                if subject == message:
+                    parsed_date = _parse_date(date_str)
+                    if parsed_date is not None:
+                        if latest_date is None or parsed_date > latest_date:
+                            latest_matching_row = row
+                            latest_date = parsed_date
+
+            # Use the latest matching row if found
+            if latest_matching_row is not None:
+                success_message = True
+
+        if success_message:
+            latest_row_cell = grid_pattern.GetItem(latest_matching_row, 0)
+
+            latest_row_parent = latest_row_cell.GetParentControl()
+
+            url_field = wait_for_control(
+                auto.EditControl, {"Name": "Adresse- og søgelinje"}, search_depth=25
+            )
+            url_field_value_pattern = url_field.GetPattern(auto.PatternId.ValuePattern)
+            url_field_value_pattern.SetValue(
+                f"https://ediportalen.dk/Messages/DownloadMessageDetailPdf?id={latest_row_parent.AutomationId}&isInbox=False"
+            )
+            url_field.SendKeys("{ENTER}")
+
+        else:
             logger.error("Message not sent.")
             raise RuntimeError("Message not sent.")
 
-        menu_button = grid_pattern.GetItem(latest_matching_row, 10)
-        menu_button.Click(simulateMove=False, waitTime=0)
-
-        # Wait for the menu popup to appear
-        time.sleep(3)
-
-        menu_popup = _get_menu_popup(root_web_area)
-
-        menu_popup_item = wait_for_control(
-            menu_popup.ListItemControl,
-            {"Name": " Gem"},
-            search_depth=50,
-        )
-        menu_popup_item.SetFocus()
-        pos = menu_popup_item.GetClickablePoint()
-        auto.MoveTo(pos[0], pos[1], moveSpeed=0.5, waitTime=0)
-        menu_popup_item_save = wait_for_control(
-            menu_popup.HyperlinkControl,
-            {"Name": "Gem som PDF"},
-            search_depth=50,
-        )
-        menu_popup_item_save.Click(simulateMove=False, waitTime=0)
+        time.sleep(5)
 
         download_path = Path.home() / "Downloads"
-        timeout = 60
-        start_time = time.time()
 
-        while time.time() - start_time < timeout:
-            receipt = next(download_path.glob("Meddelelse*.pdf"), None)
-            if receipt is not None:
-                return receipt
+        timeout = 60
+        deadline = time.time() + timeout
+
+        while next(download_path.glob("Meddelelse*.crdownload"), None):
+            if time.time() > deadline:
+                logger.error("Download did not complete within 60 seconds.")
+                raise TimeoutError("Download did not complete within 60 seconds.")
             time.sleep(1)
 
-        raise FileNotFoundError(
-            "No file starting with 'Meddelelse' and ending with '.pdf' was found within the timeout period."
-        )
+        receipts = list(download_path.glob("Meddelelse*.pdf"))
+        if not receipts:
+            logger.error("No matching receipt PDF found after download.")
+            raise FileNotFoundError("No matching receipt PDF found after download.")
+
+        receipt = max(receipts, key=lambda p: p.stat().st_mtime)
+
+        _kill_adobe()
+        time.sleep(2)
+
+        return str(receipt)
+
     except Exception as e:
         logger.error("Error while downloading the receipt from EDI Portal: %s", e)
         raise
 
 
-def rename_file(file_path: str, new_name: str, extension: str) -> str:
+def rename_file(
+    file_path: str,
+    new_name: str,
+    extension: str,
+    retries: int = 10,
+    retry_interval: float = 3.0,
+) -> str:
     """
     Renames a file and returns its new path.
 
+    Waits briefly before attempting the rename to allow any application
+    (e.g. Adobe Acrobat) to release its file handle, then uses shutil.move
+    to avoid triggering Windows shell notifications that can cause the file
+    to be opened automatically.
+
     Args:
-        file_path (str): Full path to the file to rename.
-        new_name   (str): New filename without extension.
-        extension  (str): New extension (e.g. '.pdf').
+        file_path      (str):   Full path to the file to rename.
+        new_name       (str):   New filename without extension.
+        extension      (str):   New extension (e.g. '.pdf').
+        retries        (int):   Number of times to retry if the file is locked.
+        retry_interval (float): Seconds to wait between retries.
 
     Returns:
         str: Absolute path to the renamed file.
 
     Raises:
         FileNotFoundError: If the source file does not exist.
-        OSError:           If the rename operation fails.
+        OSError:           If the rename operation fails after all retries.
     """
     path = Path(file_path)
 
     if not path.exists():
+        logger.error("File not found: %s", file_path)
         raise FileNotFoundError(f"File not found: {file_path}")
 
     new_file_path = path.parent / f"{new_name}{extension}"
-    path.rename(new_file_path)
-    return str(new_file_path)
+
+    _kill_adobe()
+    time.sleep(3)
+
+    last_error: Exception = OSError("Unknown error during rename.")
+    for attempt in range(retries):
+        try:
+            shutil.move(str(path), str(new_file_path))
+            time.sleep(5)
+            _kill_adobe()
+            return str(new_file_path)
+        except PermissionError as e:
+            last_error = e
+            if attempt < retries - 1:
+                logger.warning(
+                    "File is locked, retrying in %ss... (attempt %s/%s)",
+                    retry_interval,
+                    attempt + 1,
+                    retries,
+                )
+                _kill_adobe()
+                time.sleep(retry_interval)
+
+    raise OSError(
+        f"Could not rename '{file_path}' after {retries} attempts: {last_error}"
+    ) from last_error
 
 
 def get_constants(conn_string: str, name: str) -> list:
@@ -780,7 +893,7 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         if row_count > 0:
             for row in range(1, row_count):
                 message = grid_pattern.GetItem(row, 6).Name or ""
-                date_str = grid_pattern.GetItem(row, 1).Name or ""
+                date_str = grid_pattern.GetItem(row, 2).Name or ""
 
                 # Check if message contains the target text
                 if subject not in message:
@@ -792,7 +905,7 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
                     continue
 
                 # Both conditions must be true: message contains subject AND date is older than 1 month
-                if parsed_date > one_month_ago:
+                if parsed_date >= one_month_ago:
                     success_message = True
                     break
 
