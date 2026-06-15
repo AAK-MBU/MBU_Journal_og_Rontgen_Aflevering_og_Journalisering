@@ -305,7 +305,7 @@ wheels = [
 
 [[package]]
 name = "mbu-dev-shared-components"
-version = "4.2.8"
+version = "4.4.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -313,9 +313,9 @@ dependencies = [
     { name = "pyodbc" },
     { name = "python-dateutil" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/69/615226b4d18eda203d7b737fd9faa55251e58c137ab243fc3ca4facc1eda/mbu_dev_shared_components-4.2.8.tar.gz", hash = "sha256:640314807ebafbe9de1f83deaa0da05374d86245bd2392a2bc044bd9b9d6a009", size = 48759, upload-time = "2025-12-17T14:25:42.177Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/3a/1a4e104abe8d5bc9d40f16e7358521acc36b7a5f8e4b67ee03766e4b3048/mbu_dev_shared_components-4.4.9.tar.gz", hash = "sha256:bcd50763ab0a0e7353dc56ef278cf79477773251e7b2ad5ecd0eda85da48ab4a", size = 51852, upload-time = "2026-06-12T12:42:37.598Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/91/5ef174dd4c3e51f4258ddad0e00848ec91b5895be222bc052b59f9fd47bc/mbu_dev_shared_components-4.2.8-py3-none-any.whl", hash = "sha256:082096ec696d952f68d3130cd5fbd2a84ed815273b8a9e6eabb3dc45973241b6", size = 64476, upload-time = "2025-12-17T14:25:40.014Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/97/cadd2ec315ab3e5fb7c813b2458414819a5f8baaac04bc094b81faf3d642/mbu_dev_shared_components-4.4.9-py3-none-any.whl", hash = "sha256:d5db4f3323037353041f42293dce8ea7b876c5cbb2588ac0f5ef182ef3bf2fb5", size = 68321, upload-time = "2026-06-12T12:42:36.328Z" },
 ]
 
 [package.optional-dependencies]
@@ -334,7 +334,7 @@ solteqtand = [
 
 [[package]]
 name = "mbu-journal-og-rontgen-aflevering-og-journalisering"
-version = "0.1.0"
+version = "0.1.18"
 source = { virtual = "." }
 dependencies = [
     { name = "automation-server-client" },
@@ -348,7 +348,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "automation-server-client", git = "https://github.com/odense-rpa/automation-server-client.git?tag=v0.2.0" },
-    { name = "mbu-dev-shared-components", extras = ["romexis", "solteqtand"], specifier = "==4.2.8" },
+    { name = "mbu-dev-shared-components", extras = ["romexis", "solteqtand"], specifier = "==4.4.9" },
     { name = "mbu-rpa-core" },
     { name = "pillow" },
     { name = "ruff" },
