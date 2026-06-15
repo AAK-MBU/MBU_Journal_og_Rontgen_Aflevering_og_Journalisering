@@ -12,6 +12,7 @@ import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pyodbc
 import uiautomation as auto
@@ -656,26 +657,36 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
     Args:
         subject (str): The subject of the message to check.
 
+    Returns:
+        str: The path to the downloaded receipt PDF.
+
     Raises:
         RuntimeError: If the message was not sent successfully.
+        TimeoutError: If the receipt download does not complete within 60 seconds.
+        FileNotFoundError: If no receipt PDF is found after the download.
     """
     try:
         table_post_messages = wait_for_control(
-            auto.TableControl, {"AutomationId": "dtSent"}, search_depth=50
+            auto.TableControl,
+            {"AutomationId": "dtSent"},
+            search_depth=50,
         )
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
 
-        success_message = False
         latest_matching_row = None
         latest_date = None
 
         def _parse_date(date_str: str) -> datetime | None:
-            """Parse date from format like '11-09-2025 13:28'"""
+            """Parse a Danish portal date such as '11-09-2025 13:28'."""
             if not date_str:
                 return None
+
             try:
-                return datetime.strptime(date_str, "%d-%m-%Y %H:%M")
+                return datetime.strptime(
+                    date_str,
+                    "%d-%m-%Y %H:%M",
+                ).replace(tzinfo=ZoneInfo("Europe/Copenhagen"))
             except ValueError:
                 return None
 
@@ -686,37 +697,36 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
 
                 if subject == message:
                     parsed_date = _parse_date(date_str)
-                    if parsed_date is not None:
-                        if latest_date is None or parsed_date > latest_date:
-                            latest_matching_row = row
-                            latest_date = parsed_date
 
-            # Use the latest matching row if found
-            if latest_matching_row is not None:
-                success_message = True
+                    if parsed_date is not None and (
+                        latest_date is None or parsed_date > latest_date
+                    ):
+                        latest_matching_row = row
+                        latest_date = parsed_date
 
-        if success_message:
-            latest_row_cell = grid_pattern.GetItem(latest_matching_row, 0)
-
-            latest_row_parent = latest_row_cell.GetParentControl()
-
-            url_field = wait_for_control(
-                auto.EditControl, {"Name": "Adresse- og søgelinje"}, search_depth=25
-            )
-            url_field_value_pattern = url_field.GetPattern(auto.PatternId.ValuePattern)
-            url_field_value_pattern.SetValue(
-                f"https://ediportalen.dk/Messages/DownloadMessageDetailPdf?id={latest_row_parent.AutomationId}&isInbox=False"
-            )
-            url_field.SendKeys("{ENTER}")
-
-        else:
+        if latest_matching_row is None:
             logger.error("Message not sent.")
             raise RuntimeError("Message not sent.")
+
+        latest_row_cell = grid_pattern.GetItem(latest_matching_row, 0)
+        latest_row_parent = latest_row_cell.GetParentControl()
+
+        url_field = wait_for_control(
+            auto.EditControl,
+            {"Name": "Adresse- og søgelinje"},
+            search_depth=25,
+        )
+        url_field_value_pattern = url_field.GetPattern(auto.PatternId.ValuePattern)
+        url_field_value_pattern.SetValue(
+            "https://ediportalen.dk/Messages/"
+            "DownloadMessageDetailPdf"
+            f"?id={latest_row_parent.AutomationId}&isInbox=False"
+        )
+        url_field.SendKeys("{ENTER}")
 
         time.sleep(5)
 
         download_path = Path.home() / "Downloads"
-
         timeout = 60
         deadline = time.time() + timeout
 
@@ -724,6 +734,7 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             if time.time() > deadline:
                 logger.error("Download did not complete within 60 seconds.")
                 raise TimeoutError("Download did not complete within 60 seconds.")
+
             time.sleep(1)
 
         receipts = list(download_path.glob("Meddelelse*.pdf"))
@@ -731,7 +742,7 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
             logger.error("No matching receipt PDF found after download.")
             raise FileNotFoundError("No matching receipt PDF found after download.")
 
-        receipt = max(receipts, key=lambda p: p.stat().st_mtime)
+        receipt = max(receipts, key=lambda path: path.stat().st_mtime)
 
         _kill_adobe()
         time.sleep(2)
