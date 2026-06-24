@@ -11,8 +11,8 @@ dependencies = [
     "pillow",
     "ruff",
     "mbu-dev-shared-components[romexis,solteqtand]",
-    "mbu_rpa_core",
     "tzdata",
+    "uiautomation"
 ]
 
 [tool.uv.sources]
