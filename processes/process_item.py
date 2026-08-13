@@ -74,10 +74,42 @@ def _prepare_environment() -> None:
     hard_close("msedge.exe")
 
 
+OPEN_PATIENT_ATTEMPTS = 3
+OPEN_PATIENT_RETRY_DELAY_SECONDS = 3
+
+
+def _open_patient_with_retry(solteq_app, cpr: str) -> None:
+    """Open a patient, retrying transient UI timeouts."""
+    last_timeout: TimeoutError | None = None
+
+    for attempt in range(1, OPEN_PATIENT_ATTEMPTS + 1):
+        try:
+            solteq_app.open_patient(cpr)
+        except TimeoutError as exc:
+            last_timeout = exc
+            logger.warning(
+                "Timeout opening patient (attempt %d/%d): %s",
+                attempt,
+                OPEN_PATIENT_ATTEMPTS,
+                exc,
+            )
+            if attempt < OPEN_PATIENT_ATTEMPTS:
+                time.sleep(OPEN_PATIENT_RETRY_DELAY_SECONDS)
+            continue
+        else:
+            if attempt > 1:
+                logger.info("Patient opened successfully on attempt %d.", attempt)
+            return
+
+    raise TimeoutError(
+        f"Could not open patient after {OPEN_PATIENT_ATTEMPTS} attempts: {last_timeout}"
+    ) from last_timeout
+
+
 def _open_and_initialize_patient(solteq_app, item_data: dict) -> SolteqTandDatabase:
     """Open and initialize the patient in Solteq Tand application."""
     logger.info("Opening patient in Solteq Tand application...")
-    solteq_app.open_patient(get_context_values("cpr"))
+    _open_patient_with_retry(solteq_app, get_context_values("cpr"))
 
     logger.info("Initalization checks and getting data for further processing.")
     initalization_checks_and_get_data(item_data)
