@@ -91,7 +91,11 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         # Navigation
         lambda ctx: edifuncs.edi_portal_is_patient_data_sent(subject=ctx.subject),
         lambda _: edifuncs.edi_portal_go_to_send_journal(),
-        lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
+        # The patient page is reached by a browser navigation and will not
+        # reliably take keyboard focus, so this one transition is clicked.
+        lambda _: edifuncs.edi_portal_click_next_button(
+            sleep_time=2, use_shortcut=False
+        ),
         # Contractor lookup and selection
         lambda ctx: edifuncs.edi_portal_lookup_contractor_id(
             extern_clinic_data=ctx.extern_clinic_data
@@ -116,6 +120,9 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         # lambda ctx: edifuncs.edi_portal_choose_priority(),
         lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
         lambda _: edifuncs.edi_portal_send_message(),
+        # Sending leaves the portal on the inbox, so go to the sent list
+        # the receipt is read from. Runs in the already-sent case too.
+        lambda _: edifuncs.edi_portal_go_to_sent_messages(),
         # # Retrieve the sent receipt
         lambda ctx: setattr(
             ctx,
@@ -136,7 +143,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
 
     # Execute each step in sequence
     skip_steps = False
-    for step in pipeline[:-2]:  # Exclude the last two steps from conditional skipping
+    for step in pipeline[:-3]:  # Exclude the last three steps from conditional skipping
         try:
             if skip_steps:
                 logger.info("Skipping step due to earlier condition.")
@@ -144,7 +151,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
 
             if step(context):
                 logger.info(
-                    "Step returned True, skipping remaining steps until the last two."
+                    "Step returned True, skipping remaining steps until the last three."
                 )
                 skip_steps = True
             else:
@@ -159,8 +166,8 @@ def edi_portal_handler(context: EdiContext) -> str | None:
                 f"Step {step.__name__ if hasattr(step, '__name__') else step} failed: {e}"
             ) from e
 
-    # Always run the last two steps
-    for step in pipeline[-2:]:
+    # Always run the last three steps
+    for step in pipeline[-3:]:
         try:
             time.sleep(3)
             step(context)

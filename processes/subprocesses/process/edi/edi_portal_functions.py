@@ -3,6 +3,7 @@ This module contains functions to interact with the EDI portal.
 These functions should be moved to mbu_dev_shared_components/solteqtand/application/edi_portal.py
 """
 
+import ctypes
 import logging
 import re
 import shutil
@@ -20,6 +21,10 @@ import uiautomation as auto
 from helpers import config
 
 logger = logging.getLogger(__name__)
+
+# Letters the EDI portal binds as Alt shortcuts for "Næste" and "Send".
+NEXT_PAGE_SHORTCUT_LETTER = "n"
+SEND_MESSAGE_SHORTCUT_LETTER = "s"
 
 
 def _kill_adobe() -> None:
@@ -136,13 +141,14 @@ def edi_portal_check_contractor_id(
                 else None
             )
 
-        edi_portal_click_next_button(sleep_time=2)
+        edi_portal_click_next_button(sleep_time=2, use_shortcut=False)
 
         class_options = [
             "form-control filter_search",
             "form-control filter_search valid",
         ]
 
+        search_box = None
         for class_name in class_options:
             try:
                 search_box = wait_for_control(
@@ -155,6 +161,12 @@ def edi_portal_check_contractor_id(
                 continue
             if search_box:
                 break
+
+        if not search_box:
+            raise RuntimeError(
+                "Recipient search box not found in EDI Portal - the wizard is "
+                "probably still on the patient information page."
+            )
 
         search_box.SetFocus()
         search_box_value_pattern = search_box.GetPattern(auto.PatternId.ValuePattern)
@@ -190,51 +202,147 @@ def edi_portal_check_contractor_id(
         raise
 
 
-def edi_portal_click_next_button(sleep_time: int) -> None:
+def _send_alt_shortcut(letter: str) -> None:
     """
-    Clicks the next button in the EDI portal.
+    Presses Alt+<letter> using the left Alt key.
+
+    uiautomation's SendKeys flags every key it injects as an extended
+    key. For the Alt key that means the *right* Alt, which on a Danish
+    keyboard layout is AltGr - and browsers ignore accesskeys pressed
+    with AltGr, since it is a character-composition modifier. Pressing
+    Alt+N by hand works for exactly that reason, so the key events are
+    injected here without the extended flag.
 
     Args:
-        sleep_time (int): Time to wait after clicking the next button.
+        letter (str): The shortcut's letter, e.g. "n" for Alt+N.
+    """
+    vk_alt = auto.Keys.VK_MENU
+    vk_letter = ord(letter.upper())
+
+    events = (
+        (vk_alt, auto.KeyboardEventFlag.KeyDown),
+        (vk_letter, auto.KeyboardEventFlag.KeyDown),
+        (vk_letter, auto.KeyboardEventFlag.KeyUp),
+        (vk_alt, auto.KeyboardEventFlag.KeyUp),
+    )
+
+    for vk, flag in events:
+        scan_code = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+        auto.keybd_event(vk, scan_code, flag, 0)
+        time.sleep(0.05)
+
+
+def _try_send_shortcut(letter: str, wait_before: float = 2.0) -> bool:
+    """
+    Sends one of the EDI portal's Alt shortcuts to the page.
+
+    The shortcuts are HTML accesskeys handled by the page, so the
+    keyboard focus has to be inside the document. Nothing is done to
+    move it: every step that precedes a shortcut clicks inside the page
+    (the clinic checkbox, a form field), which leaves the focus exactly
+    where the shortcut needs it - the same state as a person clicking
+    the clinic and then hitting Alt+N.
+
+    Args:
+        letter (str): The shortcut's letter, e.g. "n" for Alt+N.
+        wait_before (float): Seconds to let the page settle before
+                             sending the shortcut.
+
+    Returns:
+        bool: True if the shortcut was sent, False if it could not be,
+              in which case the caller falls back to clicking the button.
     """
     try:
-        edge_window = wait_for_control(
-            auto.WindowControl, {"ClassName": "Chrome_WidgetWin_1"}, search_depth=3
+        time.sleep(wait_before)
+
+        logger.info("Sending Alt+%s to the EDI portal.", letter)
+        _send_alt_shortcut(letter)
+
+        return True
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning(
+            "Could not send Alt+%s (%s), falling back to clicking the button.",
+            letter,
+            e,
         )
 
-        edge_window.SetFocus()
+        return False
 
-        root_web_area = wait_for_control(
-            edge_window.DocumentControl,
-            {"AutomationId": "RootWebArea"},
-            search_depth=30,
+
+def _click_next_button_control() -> None:
+    """
+    Locates the "Næste" button in the EDI portal and clicks it.
+
+    Used for the patient information page, which is reached by a browser
+    navigation and will not reliably take keyboard focus, and as the
+    fallback for when Alt+N cannot be sent.
+
+    Raises:
+        RuntimeError: If the button is not found on the current page.
+    """
+    edge_window = wait_for_control(
+        auto.WindowControl, {"ClassName": "Chrome_WidgetWin_1"}, search_depth=3
+    )
+
+    edge_window.SetFocus()
+
+    root_web_area = wait_for_control(
+        edge_window.DocumentControl,
+        {"AutomationId": "RootWebArea"},
+        search_depth=30,
+    )
+
+    try:
+        next_button = wait_for_control(
+            root_web_area.ButtonControl,
+            {"Name": "Næste"},
+            search_depth=50,
+            timeout=5,
         )
+    except TimeoutError:
+        next_button = None
 
+    if not next_button:
         try:
             next_button = wait_for_control(
                 root_web_area.ButtonControl,
-                {"Name": "Næste"},
+                {"AutomationId": "patientInformationNextButton"},
                 search_depth=50,
                 timeout=5,
             )
         except TimeoutError:
             next_button = None
 
-        if not next_button:
-            try:
-                next_button = wait_for_control(
-                    root_web_area.ButtonControl,
-                    {"AutomationId": "patientInformationNextButton"},
-                    search_depth=50,
-                    timeout=5,
-                )
-            except TimeoutError:
-                next_button = None
+    if not next_button:
+        logger.error("Next button not found in EDI Portal")
+        raise RuntimeError("Next button not found in EDI Portal")
 
-        if not next_button:
-            logger.error("Next button not found in EDI Portal")
-            raise RuntimeError("Next button not found in EDI Portal")
-        next_button.Click(simulateMove=False, waitTime=0)
+    next_button.Click(simulateMove=False, waitTime=0)
+
+
+def edi_portal_click_next_button(
+    sleep_time: int, use_shortcut: bool = True, wait_before: float = 2.0
+) -> None:
+    """
+    Advances the EDI portal to the next page.
+
+    The portal exposes Alt+N as a keyboard shortcut for the "Næste"
+    button, so the shortcut is sent to the page instead of locating and
+    clicking the button in the UI tree. If the shortcut cannot be sent,
+    the button is located and clicked instead.
+
+    Args:
+        sleep_time (int): Time to wait after advancing to the next page.
+        use_shortcut (bool): Send Alt+N instead of clicking the button.
+        wait_before (float): Seconds to let the current page settle
+                             before sending Alt+N.
+    """
+    try:
+        if not (
+            use_shortcut and _try_send_shortcut(NEXT_PAGE_SHORTCUT_LETTER, wait_before)
+        ):
+            _click_next_button_control()
+
         time.sleep(sleep_time)
     except Exception as e:
         logger.error("Error while clicking next button in EDI Portal: %s", e)
@@ -276,6 +384,7 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
             "form-control filter_search valid",
         ]
 
+        search_box = None
         for class_name in class_options:
             try:
                 search_box = wait_for_control(
@@ -288,6 +397,12 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
                 continue
             if search_box:
                 break
+
+        if not search_box:
+            raise RuntimeError(
+                "Recipient search box not found in EDI Portal - the wizard is "
+                "probably still on the patient information page."
+            )
 
         search_box.SetFocus()
         search_box_value_pattern = search_box.GetPattern(auto.PatternId.ValuePattern)
@@ -546,21 +661,50 @@ def edi_portal_choose_priority(priority: str = "Rutine") -> None:
         raise
 
 
-def edi_portal_send_message() -> None:
+def _click_send_message_button_control() -> None:
+    """
+    Locates the "Send" button in the EDI portal and clicks it.
+
+    Fallback for when the Alt+S shortcut cannot be sent.
+
+    Raises:
+        TimeoutError: If the button is not found.
+    """
+    root_web_area = wait_for_control(
+        auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
+    )
+
+    send_message_button = wait_for_control(
+        root_web_area.ButtonControl,
+        {"AutomationId": "submitButton"},
+        search_depth=4,
+    )
+    send_message_button.Click(simulateMove=False, waitTime=0)
+
+
+def edi_portal_send_message(
+    use_shortcut: bool = True, wait_before: float = 2.0
+) -> None:
     """
     Sends a message in the EDI portal.
+
+    The portal exposes Alt+S as a keyboard shortcut for the "Send"
+    button, so the shortcut is sent to the page instead of locating and
+    clicking the button in the UI tree. If the shortcut cannot be sent,
+    the button is located and clicked instead.
+
+    Args:
+        use_shortcut (bool): Send Alt+S instead of clicking the button.
+        wait_before (float): Seconds to let the page settle before
+                             sending Alt+S.
     """
     try:
-        root_web_area = wait_for_control(
-            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
-        )
+        if not (
+            use_shortcut
+            and _try_send_shortcut(SEND_MESSAGE_SHORTCUT_LETTER, wait_before)
+        ):
+            _click_send_message_button_control()
 
-        send_message_button = wait_for_control(
-            root_web_area.ButtonControl,
-            {"AutomationId": "submitButton"},
-            search_depth=4,
-        )
-        send_message_button.Click(simulateMove=False, waitTime=0)
         logger.info("Message sent in EDI Portal.")
     except Exception as e:
         logger.error("Error while sending message in EDI Portal: %s", e)
@@ -928,6 +1072,38 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
         logger.error(
             "Error while checking if patient data is sent in EDI Portal: %s", e
         )
+        raise
+
+
+def edi_portal_go_to_sent_messages(
+    wait_before: float = 3.0, sleep_time: int = 5
+) -> None:
+    """
+    Navigates to the EDI portal's list of sent messages.
+
+    Sending a message leaves the portal on the inbox, but the receipt is
+    read from the sent list, so we navigate there explicitly instead of
+    relying on where the portal happens to land after a send.
+
+    Args:
+        wait_before (float): Seconds to wait after the send before
+                             navigating, so the send completes first.
+        sleep_time (int): Seconds to wait for the sent list to load.
+    """
+    try:
+        time.sleep(wait_before)
+
+        url_field = wait_for_control(
+            auto.EditControl, {"Name": "Adresse- og søgelinje"}, search_depth=25
+        )
+        url_field_value_pattern = url_field.GetPattern(auto.PatternId.ValuePattern)
+        url_field_value_pattern.SetValue("https://ediportalen.dk/Messages/Sent")
+        url_field.SendKeys("{ENTER}")
+
+        logger.info("Navigated to the sent messages in EDI Portal.")
+        time.sleep(sleep_time)
+    except Exception as e:
+        logger.error("Error while navigating to the sent messages in EDI Portal: %s", e)
         raise
 
 
