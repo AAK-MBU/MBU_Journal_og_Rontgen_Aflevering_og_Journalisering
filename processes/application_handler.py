@@ -49,9 +49,12 @@ def soft_close() -> None:
     logger.info("Closing applications softly...")
 
     logger.info("Closing Solteq Tand application softly...")
+    # ruff: noqa: PLW0602, PLW0603
+    global APP
     application = get_app()
     try:
         application.close_solteq_tand()
+        APP = None
         logger.info("Closed application softly")
     except Exception as e:
         logger.error("Could not close application softly: %s", e)
@@ -74,12 +77,17 @@ def hard_close(application: str) -> None:
 
 def close():
     """Function for closing applications softly or hardly if necessary"""
-    solteq_app = get_app()
-    if solteq_app:
+    # ruff: noqa: PLW0602, PLW0603
+    global APP
+
+    if get_app():
         soft_close()
-    solteq_app = get_app()
-    if solteq_app:
+
+    # soft_close() clears APP once the graceful close succeeded, so anything
+    # still set here means it failed and the process has to be killed.
+    if get_app():
         hard_close(application="TMTand.exe")
+        APP = None
 
     # Make sure Adobe Acrobat Reader and MSEdge is closed before starting the process
     hard_close("AcroRd32.exe")

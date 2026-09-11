@@ -13,7 +13,7 @@ from mbu_rpa_core.exceptions import BusinessError, ProcessError
 from helpers import config
 from helpers.context_handler import get_context_values, set_context_values
 from helpers.credential_constants import get_rpa_constant
-from processes.application_handler import close, get_app, hard_close
+from processes.application_handler import get_app, hard_close
 from processes.subprocesses.dashboard.dashboard_data_handler import (
     update_dashboard_step_run,
 )
@@ -34,6 +34,7 @@ from processes.subprocesses.process.romexis.romexis_images_handler import (
     get_images_from_romexis,
 )
 from processes.subprocesses.reset.clean_up import release_keys
+from processes.subprocesses.reset.close_applications import close_patient_window
 
 logger = logging.getLogger(__name__)
 
@@ -315,4 +316,13 @@ def process_item(item_data: dict, item_id: int) -> None:
         )
         raise ProcessError("A process error occurred.") from e
     finally:
-        close()
+        # Only the patient window is closed between work items - Solteq itself
+        # stays open and logged in, since the next item assumes a running app.
+        # A full close() happens on reset() after an error and once after the
+        # queue is drained.
+        close_patient_window(get_app())
+
+        # The EDI portal runs in Edge and opens receipts in Acrobat; neither
+        # should be left behind for the next item.
+        hard_close("AcroRd32.exe")
+        hard_close("msedge.exe")

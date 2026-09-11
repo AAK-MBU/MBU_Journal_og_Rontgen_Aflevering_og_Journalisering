@@ -2,32 +2,43 @@
 
 import logging
 
-from mbu_rpa_core.exceptions import ProcessError
-
-from processes.application_handler import get_app
-
 logger = logging.getLogger(__name__)
-application = get_app()
 
 
 def close_patient_window(app_instance) -> None:
-    """Closes the patient window in the Solteq Tand application if it exists."""
-    if hasattr(app_instance, "solteq_tand_app") and app_instance.solteq_tand_app:
-        try:
-            logger.info("Close patient window.")
-            app_instance.solteq_tand_app.close_patient_window()
-        except ProcessError as error:
-            logger.error("Error closing patient window: %s", error)
+    """Closes the patient window in the Solteq Tand application if it is open.
+
+    This runs between work items, including while an exception is already
+    propagating, so every failure is logged and swallowed rather than
+    masking the error that caused the item to fail.
+
+    Args:
+        app_instance: The SolteqTandApp instance, or None if Solteq is not running.
+    """
+    if not app_instance:
+        logger.info("No Solteq Tand instance available. Skipping patient window close.")
+        return
+
+    try:
+        logger.info("Close patient window.")
+        app_instance.close_patient_window()
+    except Exception as error:  # pylint: disable=broad-except
+        logger.error("Error closing patient window: %s", error)
 
 
 def close_solteq_tand(app_instance) -> None:
-    """Closes the Solteq Tand application if it exists."""
-    if hasattr(app_instance, "solteq_tand_app") and app_instance.solteq_tand_app:
-        try:
-            logger.info("Close Solteq Tand.")
-            app_instance.solteq_tand_app.close_solteq_tand()
-            logger.info("Solteq Tand closed.")
-        except ProcessError as error:
-            logger.error("Error closing Solteq Tand: %s", error)
-    else:
-        logger.info("solteq_tand_app attribute not found. Skipping close operations.")
+    """Closes the Solteq Tand application if it is running.
+
+    Args:
+        app_instance: The SolteqTandApp instance, or None if Solteq is not running.
+    """
+    if not app_instance:
+        logger.info("No Solteq Tand instance available. Skipping close operations.")
+        return
+
+    try:
+        logger.info("Close Solteq Tand.")
+        app_instance.close_solteq_tand()
+        logger.info("Solteq Tand closed.")
+    except Exception as error:  # pylint: disable=broad-except
+        logger.error("Error closing Solteq Tand: %s", error)
