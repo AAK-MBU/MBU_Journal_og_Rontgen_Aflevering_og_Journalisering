@@ -118,7 +118,10 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
         # Priority & send
         # lambda ctx: edifuncs.edi_portal_choose_priority(),
-        lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
+        # The summary page is slow to render, and Alt+S on a half-built
+        # page does nothing, so this last transition gets a long settle.
+        lambda _: edifuncs.edi_portal_click_next_button(sleep_time=10),
+        lambda _: time.sleep(5),
         lambda _: edifuncs.edi_portal_send_message(),
         # Sending leaves the portal on the inbox, so go to the sent list
         # the receipt is read from. Runs in the already-sent case too.

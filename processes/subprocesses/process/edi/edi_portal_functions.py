@@ -269,6 +269,67 @@ def _try_send_shortcut(letter: str, wait_before: float = 2.0) -> bool:
         return False
 
 
+def _find_recipient_search_box(root_web_area, timeout: int = 2):
+    """
+    Finds the recipient search box on the EDI portal's recipient page.
+
+    Doubles as the "are we on the recipient page yet" check, since the
+    box only exists there. Scoped to the portal document so a stale or
+    unrelated window cannot satisfy the search.
+
+    Args:
+        root_web_area: The portal's document control.
+        timeout (int): How long to wait for each of the class variants.
+
+    Returns:
+        The search box control, or None if the page has no search box.
+    """
+    class_options = [
+        "form-control filter_search",
+        "form-control filter_search valid",
+    ]
+
+    for class_name in class_options:
+        try:
+            return wait_for_control(
+                root_web_area.EditControl,
+                {"ClassName": class_name},
+                search_depth=22,
+                timeout=timeout,
+            )
+        except TimeoutError:
+            continue
+
+    return None
+
+
+def _focus_edge_window():
+    """
+    Finds the Edge window hosting the EDI portal and activates it.
+
+    `SetActive` is used rather than `SetFocus`: it brings the window to
+    the foreground and waits for the change to settle, whereas
+    `SetFocus` is a bare UIA call that does not wait and returns False
+    silently when it fails. The button is clicked with a real mouse
+    move, so the window has to actually be in the foreground.
+
+    Returns:
+        The activated Edge window control.
+
+    Raises:
+        TimeoutError: If the Edge window is not found.
+    """
+    edge_window = wait_for_control(
+        auto.WindowControl, {"ClassName": "Chrome_WidgetWin_1"}, search_depth=3
+    )
+
+    if not edge_window.SetActive():
+        logger.warning("SetActive failed on the Edge window, trying SetFocus.")
+        edge_window.SetFocus()
+
+    return edge_window
+
+
 def _click_next_button_control() -> None:
     """
     Locates the "Næste" button in the EDI portal and clicks it.
@@ -280,21 +341,11 @@ def _click_next_button_control() -> None:
     Raises:
         RuntimeError: If the button is not found on the current page.
     """
-    edge_window = wait_for_control(
-        auto.WindowControl, {"ClassName": "Chrome_WidgetWin_1"}, search_depth=3
-    )
-
-    edge_window.SetFocus()
-
-    root_web_area = wait_for_control(
-        edge_window.DocumentControl,
-        {"AutomationId": "RootWebArea"},
-        search_depth=30,
-    )
+    edge_window = _focus_edge_window()
 
     try:
         next_button = wait_for_control(
-            root_web_area.ButtonControl,
+            edge_window.ButtonControl,
             {"Name": "Næste"},
             search_depth=50,
             timeout=5,
@@ -305,7 +356,7 @@ def _click_next_button_control() -> None:
     if not next_button:
         try:
             next_button = wait_for_control(
-                root_web_area.ButtonControl,
+                edge_window.ButtonControl,
                 {"AutomationId": "patientInformationNextButton"},
                 search_depth=50,
                 timeout=5,
@@ -379,24 +430,11 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
                 else None
             )
 
-        class_options = [
-            "form-control filter_search",
-            "form-control filter_search valid",
-        ]
+        root_web_area = wait_for_control(
+            auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
+        )
 
-        search_box = None
-        for class_name in class_options:
-            try:
-                search_box = wait_for_control(
-                    auto.EditControl,
-                    {"ClassName": class_name},
-                    search_depth=50,
-                    timeout=5,
-                )
-            except TimeoutError:
-                continue
-            if search_box:
-                break
+        search_box = _find_recipient_search_box(root_web_area)
 
         if not search_box:
             raise RuntimeError(
@@ -410,7 +448,7 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
             contractor_id if contractor_id else clinic_phone_number
         )
         search_box.SendKeys("{ENTER}")
-        time.sleep(3)
+        time.sleep(5)
     except Exception as e:
         logger.error("Error while looking up contractor ID in EDI Portal: %s", e)
         raise
@@ -1118,6 +1156,10 @@ def edi_portal_go_to_send_journal() -> None:
         url_field_value_pattern = url_field.GetPattern(auto.PatternId.ValuePattern)
         url_field_value_pattern.SetValue("https://ediportalen.dk/Journal/Create")
         url_field.SendKeys("{ENTER}")
+        # The wizard's first page is driven straight after this, so wait for
+        # the navigation to land - otherwise the still-visible previous page
+        # is the one that gets clicked.
+        time.sleep(5)
     except Exception as e:
         logger.error("Error while navigating to 'Send journal' in EDI Portal: %s", e)
         raise
