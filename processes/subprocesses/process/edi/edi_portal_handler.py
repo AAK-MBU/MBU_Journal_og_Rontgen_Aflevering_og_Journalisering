@@ -78,8 +78,13 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         logger.error("Invalid or missing 'edi_portal_content' data in constant.")
         raise RuntimeError("Invalid or missing 'edi_portal_content' data in constant.")
 
+    # The portal truncates the subject in its message lists, and where it
+    # cuts varies, so the clinic suffix cannot be relied on when matching
+    # a sent message. The unsuffixed subject is what always survives.
+    base_subject = context.value_data["edi_portal_content"]["subject"]
+
     subject = _subject_build(
-        subject=context.value_data["edi_portal_content"]["subject"],
+        subject=base_subject,
         contractor_id=context.extern_clinic_data[0]["contractorId"],
     )
     context.subject = subject
@@ -89,7 +94,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
     # Define the ordered list of pipeline steps
     pipeline: list[Step] = [
         # Navigation
-        lambda ctx: edifuncs.edi_portal_is_patient_data_sent(subject=ctx.subject),
+        lambda _: edifuncs.edi_portal_is_patient_data_sent(subject=base_subject),
         lambda _: edifuncs.edi_portal_go_to_send_journal(),
         # The patient page is reached by a browser navigation and will not
         # reliably take keyboard focus, so this one transition is clicked.
@@ -130,7 +135,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         lambda ctx: setattr(
             ctx,
             "receipt_path",
-            edifuncs.edi_portal_get_journal_sent_receip(subject=ctx.subject),
+            edifuncs.edi_portal_get_journal_sent_receip(subject=base_subject),
         ),
         # Rename the receipt on disk
         lambda ctx: setattr(
