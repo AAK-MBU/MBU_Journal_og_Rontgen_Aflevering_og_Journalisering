@@ -765,13 +765,17 @@ def _find_latest_matching_message(
     """
 
     def _parse_date(date_str: str) -> datetime | None:
-        """Parse date from format like '11-09-2025 13:28'"""
+        """Parse a portal date like '11-09-2025 13:28' or '22-10-2026 09.25'.
+
+        The portal renders the time with either a colon or a dot
+        depending on the machine's regional settings.
+        """
         if not date_str:
             return None
         try:
-            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
-                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
-            )
+            return datetime.strptime(
+                date_str.replace(".", ":"), "%d-%m-%Y %H:%M"
+            ).replace(tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen"))
         except ValueError:
             return None
 
@@ -860,13 +864,16 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
         latest_date = None
 
         def _parse_date(date_str: str) -> datetime | None:
-            """Parse a Danish portal date such as '11-09-2025 13:28'."""
+            """Parse a Danish portal date such as '11-09-2025 13:28'.
+
+            The time may also arrive dot-separated, e.g. '22-10-2026 09.25'.
+            """
             if not date_str:
                 return None
 
             try:
                 return datetime.strptime(
-                    date_str,
+                    date_str.replace(".", ":"),
                     "%d-%m-%Y %H:%M",
                 ).replace(tzinfo=ZoneInfo("Europe/Copenhagen"))
             except ValueError:
@@ -1039,13 +1046,17 @@ def edi_portal_is_patient_data_sent(subject: str) -> bool:
     """
 
     def _parse_date(date_str: str) -> datetime | None:
-        """Parse date from format like '11-09-2025 13:28'"""
+        """Parse a portal date like '11-09-2025 13:28' or '22-10-2026 09.25'.
+
+        The portal renders the time with either a colon or a dot
+        depending on the machine's regional settings.
+        """
         if not date_str:
             return None
         try:
-            return datetime.strptime(date_str, "%d-%m-%Y %H:%M").replace(
-                tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen")
-            )
+            return datetime.strptime(
+                date_str.replace(".", ":"), "%d-%m-%Y %H:%M"
+            ).replace(tzinfo=zoneinfo.ZoneInfo("Europe/Copenhagen"))
         except ValueError:
             logger.error("Error parsing date: %s", date_str)
             return None
