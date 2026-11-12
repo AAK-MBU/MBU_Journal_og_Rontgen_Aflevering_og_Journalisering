@@ -118,28 +118,9 @@ def edi_portal_check_contractor_id(
         dict: A dictionary containing the row count and whether the phone number matches.
     """
     try:
-        # Handle Hasle Torv Clinic special case
-        contractor_id = None
-        clinic_phone_number = None
-
-        # Handle Hasle Torv Clinic special case
-        if (
-            extern_clinic_data[0]["contractorId"] == "477052"
-            or extern_clinic_data[0]["contractorId"] == "470678"
-        ):
-            contractor_id = "485055"
-            clinic_phone_number = "86135240"
-        else:
-            contractor_id = (
-                extern_clinic_data[0]["contractorId"]
-                if extern_clinic_data[0]["contractorId"]
-                else None
-            )
-            clinic_phone_number = (
-                extern_clinic_data[0]["phoneNumber"]
-                if extern_clinic_data[0]["phoneNumber"]
-                else None
-            )
+        # EDI redirects are applied by the caller (context "edi_clinic_data")
+        contractor_id = extern_clinic_data[0]["contractorId"] or None
+        clinic_phone_number = extern_clinic_data[0]["phoneNumber"] or None
 
         edi_portal_click_next_button(sleep_time=2, use_shortcut=False)
 
@@ -408,27 +389,9 @@ def edi_portal_lookup_contractor_id(extern_clinic_data: dict) -> None:
         extern_clinic_data (dict): A dictionary containing the contractor ID and phone number.
     """
     try:
-        contractor_id = None
-        clinic_phone_number = None
-
-        # Handle Hasle Torv Clinic special case
-        if (
-            extern_clinic_data[0]["contractorId"] == "477052"
-            or extern_clinic_data[0]["contractorId"] == "470678"
-        ):
-            contractor_id = "485055"
-            clinic_phone_number = "86135240"
-        else:
-            contractor_id = (
-                extern_clinic_data[0]["contractorId"]
-                if extern_clinic_data[0]["contractorId"]
-                else None
-            )
-            clinic_phone_number = (
-                extern_clinic_data[0]["phoneNumber"]
-                if extern_clinic_data[0]["phoneNumber"]
-                else None
-            )
+        # EDI redirects are applied by the caller (context "edi_clinic_data")
+        contractor_id = extern_clinic_data[0]["contractorId"] or None
+        clinic_phone_number = extern_clinic_data[0]["phoneNumber"] or None
 
         root_web_area = wait_for_control(
             auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
@@ -462,13 +425,8 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
         extern_clinic_data (dict): A dictionary containing the contractor ID and phone number.
     """
     try:
-        if (
-            extern_clinic_data[0]["contractorId"] == "477052"
-            or extern_clinic_data[0]["contractorId"] == "470678"
-        ):
-            clinic_phone_number = "86135240"
-        else:
-            clinic_phone_number = extern_clinic_data[0]["phoneNumber"]
+        # EDI redirects are applied by the caller (context "edi_clinic_data")
+        clinic_phone_number = extern_clinic_data[0]["phoneNumber"]
 
         table_dentists = wait_for_control(
             auto.TableControl,
@@ -489,36 +447,30 @@ def edi_portal_choose_receiver(extern_clinic_data: dict) -> None:
         raise
 
 
-def _subject_build(subject: str, contractor_id: str) -> str:
+def _subject_build(subject: str, subject_suffix: str | None = None) -> str:
     """Build the EDI portal subject line.
 
-    Appends a clinic-specific suffix based on the contractor ID and
+    Appends the optional clinic-specific suffix (from the EDI redirect) and
     verifies the result fits the EDI portal's character limit.
 
     Args:
         subject: The base subject text.
-        contractor_id: Contractor ID used to select the clinic suffix.
+        subject_suffix: Optional clinic suffix, e.g. "på Tandklinikken Hasle Torv".
 
     Returns:
         The final subject line.
 
     Raises:
-        ValueError: If the subject or contractor ID is missing, or if the
-            final subject exceeds 66 characters.
+        ValueError: If the subject is missing, or if the final subject
+            exceeds 66 characters.
     """
 
     if not subject:
         logger.error("Subject is missing.")
         raise ValueError("Subject is missing.")
 
-    if not contractor_id:
-        logger.error("Contractor ID is missing.")
-        raise ValueError("Contractor ID is missing.")
-
-    if contractor_id == "477052":
-        subject = subject + " på Tandklinikken Hasle Torv"
-    elif contractor_id == "470678":
-        subject = subject + " på Tandklinikken Brobjergparken"
+    if subject_suffix:
+        subject = f"{subject} {subject_suffix}"
 
     MAX_SUBJECT_LENGTH = 66
 
@@ -531,8 +483,8 @@ def _subject_build(subject: str, contractor_id: str) -> str:
 
 def edi_portal_add_content(
     edi_portal_content: dict[str, Any],
-    extern_clinic_data: list[dict[str, str]],
     journal_continuation_text: str | None = None,
+    subject_suffix: str | None = None,
 ) -> None:
     """
     Adds content to the EDI portal based on the provided queue element and content template.
@@ -540,14 +492,14 @@ def edi_portal_add_content(
     Args:
         edi_portal_content:
             Content template containing the keys "subject" and "body".
-        extern_clinic_data:
-            External clinic data. The first item must contain "contractorId".
         journal_continuation_text:
             Optional text used to replace the @dentalPlan placeholder.
+        subject_suffix:
+            Optional clinic-specific subject suffix from the EDI redirect.
 
     Raises:
         ValueError:
-            If required content or clinic data is missing.
+            If required content is missing.
     """
 
     subject_template = edi_portal_content["subject"]
@@ -560,18 +512,9 @@ def edi_portal_add_content(
         logger.error("Body is required.")
         raise ValueError("Body is required.")
 
-    if not extern_clinic_data:
-        logger.error("External clinic data is required.")
-        raise ValueError("External clinic data is required.")
-
-    contractor_id = extern_clinic_data[0]["contractorId"]
-    if not contractor_id:
-        logger.error("ContractorId is required.")
-        raise ValueError("ContractorId is required.")
-
     subject = _subject_build(
         subject=subject_template,
-        contractor_id=contractor_id,
+        subject_suffix=subject_suffix,
     )
 
     if journal_continuation_text:

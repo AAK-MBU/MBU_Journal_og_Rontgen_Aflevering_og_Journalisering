@@ -26,7 +26,9 @@ class EdiContext:
     required for processing in the EDI portal handler.
 
     Attributes:
-        extern_clinic_data (list[Dict[str, Any]]): External clinic data used in processing.
+        extern_clinic_data (list[Dict[str, Any]]): External clinic data as the EDI portal
+            should see it (EDI redirect already applied).
+        subject_suffix (str | None): Clinic-specific subject suffix from the EDI redirect.
         queue_element (Dict[str, Any]): Queue element containing relevant information.
         journal_note (str): Note to be added to the journal.
         path_to_files_for_upload (str): Path to the files that need to be uploaded.
@@ -37,6 +39,7 @@ class EdiContext:
     extern_clinic_data: list[dict[str, Any]]
     queue_element: dict[str, Any]
     path_to_files_for_upload: str
+    subject_suffix: str | None = None
     subject: str = ""
     journal_note: str | None = None
     value_data: dict[str, Any] | None = None
@@ -85,7 +88,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
 
     subject = _subject_build(
         subject=base_subject,
-        contractor_id=context.extern_clinic_data[0]["contractorId"],
+        subject_suffix=context.subject_suffix,
     )
     context.subject = subject
 
@@ -113,7 +116,7 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         lambda ctx: edifuncs.edi_portal_add_content(
             edi_portal_content=ctx.value_data["edi_portal_content"],  # type: ignore
             journal_continuation_text=ctx.journal_note,
-            extern_clinic_data=ctx.extern_clinic_data,
+            subject_suffix=ctx.subject_suffix,
         ),
         lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
         # File upload
