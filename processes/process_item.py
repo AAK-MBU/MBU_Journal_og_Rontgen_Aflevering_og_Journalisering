@@ -159,7 +159,9 @@ def _process_edi_portal(
     # Send the documents trough the EDI Portal to the new dentist.
     try:
         ctx = EdiContext(
-            extern_clinic_data=get_context_values("extern_clinic_data"),
+            # EDI clinic data has any EDI redirect applied
+            extern_clinic_data=get_context_values("edi_clinic_data"),
+            subject_suffix=get_context_values("edi_subject_suffix"),
             queue_element=item_data,
             path_to_files_for_upload=joined_file_paths,
             journal_note=get_context_values("administrative_note_description"),

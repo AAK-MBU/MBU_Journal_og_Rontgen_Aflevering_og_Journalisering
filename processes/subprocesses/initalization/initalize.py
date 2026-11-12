@@ -7,7 +7,12 @@ from mbu_rpa_core.exceptions import BusinessError, ProcessError
 
 from helpers import config
 from helpers.context_handler import get_context_values, set_context_values
-from helpers.credential_constants import get_exceptions, get_rpa_constant
+from helpers.credential_constants import (
+    apply_edi_redirect,
+    get_edi_redirect,
+    get_exceptions,
+    get_rpa_constant,
+)
 from processes.application_handler import get_app
 
 logger = logging.getLogger(__name__)
@@ -142,9 +147,10 @@ class InitializationChecks:
             logger.info("Checking contractor data...")
             if get_context_values("extern_clinic_data") is None:
                 raise ValueError("Extern clinic data is not set.")
+            # EDI clinic data has any EDI redirect applied
             result = solteq_app.edi_portal_check_contractor_id(
-                extern_clinic_data=get_context_values("extern_clinic_data")
-                if get_context_values("extern_clinic_data")
+                extern_clinic_data=get_context_values("edi_clinic_data")
+                if get_context_values("edi_clinic_data")
                 else {}
             )
 
@@ -209,7 +215,28 @@ def initalization_checks_and_get_data(queue_element_data) -> None:
     )
 
     # Check if extern dentist phone number is set and get extern clinic data
-    set_context_values(extern_clinic_data=init_checks_obj.check_extern_clinic_data())
+    extern_clinic_data = init_checks_obj.check_extern_clinic_data()
+
+    # Resolve the EDI recipient once; all EDI portal steps use edi_clinic_data
+    # and edi_subject_suffix from the context.
+    contractor_id = (
+        extern_clinic_data[0].get("contractorId") if extern_clinic_data else None
+    )
+    edi_redirect = get_edi_redirect(contractor_id)
+    if edi_redirect:
+        logger.info(
+            "EDI redirect for contractor %s: recipient %s (phone: %s, subject suffix: %r).",
+            contractor_id,
+            edi_redirect["contractor_id"],
+            edi_redirect["phone_number"] or extern_clinic_data[0].get("phoneNumber"),
+            edi_redirect["subject_suffix"],
+        )
+
+    set_context_values(
+        extern_clinic_data=extern_clinic_data,
+        edi_clinic_data=apply_edi_redirect(extern_clinic_data, edi_redirect),
+        edi_subject_suffix=edi_redirect["subject_suffix"] if edi_redirect else None,
+    )
 
     # Get administrative note
     set_context_values(administrative_note=init_checks_obj.get_administrative_note())

@@ -33,7 +33,7 @@ def check_contractor_data() -> None:
         logger.info("Checking if contractor id is set...")
 
         contractor_check = solteq_app.edi_portal_check_contractor_id(
-            extern_clinic_data=get_context_values("extern_clinic_data"),
+            extern_clinic_data=get_context_values("edi_clinic_data"),
         )
 
         rpa_db_conn = get_rpa_constant("DbConnectionString")
