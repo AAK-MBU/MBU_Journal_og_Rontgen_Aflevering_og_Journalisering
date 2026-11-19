@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import shutil
+import time
 
 from mbu_rpa_core.exceptions import ProcessError
 
@@ -11,6 +12,37 @@ from helpers import config
 from helpers.context_handler import get_context_values
 
 logger = logging.getLogger(__name__)
+
+
+def _wait_for_document_file(
+    path: str, timeout: float = 30.0, interval: float = 1.0
+) -> bool:
+    """Wait for a document file to appear on disk.
+
+    Solteq writes the journal PDF to the document store after the GUI
+    action that creates it has returned, so a document created moments
+    earlier can have its database row in place while the file itself is
+    not there yet.
+
+    Args:
+        path: The document's source path from the database.
+        timeout: How long to wait for the file, in seconds.
+        interval: Seconds between checks.
+
+    Returns:
+        bool: True if the file is there, False if it never appeared.
+    """
+    deadline = time.monotonic() + timeout
+
+    while True:
+        if os.path.exists(path):
+            return True
+
+        if time.monotonic() >= deadline:
+            return False
+
+        logger.info("Waiting for document file to appear: %s", path)
+        time.sleep(interval)
 
 
 def prepare_edi_portal_documents(solteq_tand_db_object) -> str:
@@ -92,6 +124,20 @@ def prepare_edi_portal_documents(solteq_tand_db_object) -> str:
             for document in documents:
                 source_path = document["fileSourcePath"]
                 destination_path = os.path.join(temp_dir, document["OriginalFilename"])
+
+                if not _wait_for_document_file(source_path):
+                    logger.error(
+                        "Document file not found on disk: %s (type=%s, created=%s)",
+                        source_path,
+                        document.get("DocumentType"),
+                        document.get("DocumentCreatedDate"),
+                    )
+                    raise ProcessError(
+                        f"Document file not found on disk: {source_path} "
+                        f"(type={document.get('DocumentType')}, "
+                        f"created={document.get('DocumentCreatedDate')})"
+                    )
+
                 shutil.copy2(source_path, destination_path)
                 logger.info("Copied %s to %s", source_path, destination_path)
 
