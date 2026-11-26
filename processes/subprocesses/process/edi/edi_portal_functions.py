@@ -575,6 +575,79 @@ def edi_portal_add_content(
         raise
 
 
+UPLOAD_PROCESSING_BANNER = "En eller flere filer er under behandling. Du kan fortsætte til næste trin, når arbejdet er færdigt."
+
+
+def _upload_banner_is_up(root_web_area, timeout: float) -> bool:
+    """
+    Tells whether the portal's "files are being processed" banner is up.
+
+    Args:
+        root_web_area: The portal's document control.
+        timeout (float): How long to look for the banner.
+
+    Returns:
+        bool: True if the banner is showing within the timeout.
+    """
+    try:
+        wait_for_control(
+            root_web_area.TextControl,
+            {"Name": UPLOAD_PROCESSING_BANNER},
+            search_depth=20,
+            timeout=timeout,
+        )
+
+        return True
+    except TimeoutError:
+        return False
+
+
+def _wait_for_uploads_to_finish(
+    root_web_area, appear_timeout: float = 20.0, finish_timeout: float = 300.0
+) -> None:
+    """
+    Waits until the portal has finished processing the uploaded files.
+
+    The banner only appears once the portal starts processing, which
+    can be several seconds after the file dialog is dismissed - long
+    enough for a large Romexis zip. Taking "not there yet" for
+    "finished" sends Naeste while files are still uploading, the portal
+    swallows it, and the run ends up a page short of the summary.
+    The banner is therefore waited *for* first, and only then waited out.
+
+    Args:
+        root_web_area: The portal's document control.
+        appear_timeout (float): How long to wait for the banner to show
+                                before taking the upload as instant.
+        finish_timeout (float): How long to wait for it to clear.
+
+    Raises:
+        TimeoutError: If the portal is still processing when the time
+                      runs out.
+    """
+    if not _upload_banner_is_up(root_web_area, appear_timeout):
+        logger.info(
+            "No upload-processing banner within %.0fs; taking the upload as done.",
+            appear_timeout,
+        )
+
+        return
+
+    logger.info("The portal is processing the uploaded files.")
+    deadline = time.monotonic() + finish_timeout
+
+    while _upload_banner_is_up(root_web_area, timeout=2):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                "The EDI portal was still processing the uploaded files after "
+                f"{finish_timeout:.0f}s."
+            )
+
+        time.sleep(2)
+
+    logger.info("The portal finished processing the uploaded files.")
+
+
 def edi_portal_upload_files(path_to_files: str) -> None:
     """
     Uploads files to the EDI portal.
@@ -601,25 +674,7 @@ def edi_portal_upload_files(path_to_files: str) -> None:
         auto.DocumentControl, {"AutomationId": "RootWebArea"}, search_depth=30
     )
 
-    element_gone = False
-    timeout = 180  # Set a timeout for the upload progress check
-    while not element_gone and timeout > 0:
-        try:
-            upload_progress = wait_for_control(
-                root_web_area.TextControl,
-                {
-                    "Name": "En eller flere filer er under behandling. Du kan fortsætte til næste trin, når arbejdet er færdigt."
-                },
-                search_depth=20,
-                timeout=5,
-            )
-            if upload_progress:
-                time.sleep(5)
-                timeout -= 5
-            else:
-                element_gone = True
-        except TimeoutError:
-            element_gone = True
+    _wait_for_uploads_to_finish(root_web_area)
 
 
 def edi_portal_choose_priority(priority: str = "Rutine") -> None:
@@ -662,16 +717,75 @@ def _click_send_message_button_control() -> None:
     send_message_button.Click(simulateMove=False, waitTime=0)
 
 
-def _send_button_is_gone(timeout: float = 20.0, interval: float = 1.0) -> bool:
+def _send_button_exists() -> bool | None:
     """
-    Tells whether the summary page's Send button has gone away.
+    Looks once for the summary page's Send button.
+
+    Returns:
+        bool | None: True if the button is there, False if the page
+                     does not have one, and None if the check itself
+                     could not be made - which is not the same as the
+                     button being gone.
+    """
+    try:
+        root_web_area = wait_for_control(
+            auto.DocumentControl,
+            {"AutomationId": "RootWebArea"},
+            search_depth=30,
+            timeout=2,
+        )
+    except TimeoutError:
+        return None
+
+    try:
+        return root_web_area.ButtonControl(
+            searchDepth=4, AutomationId="submitButton"
+        ).Exists(0, 0)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Could not check the Send button (%s).", e)
+
+        return None
+
+
+def _wait_for_send_button(timeout: float = 15.0, interval: float = 1.0) -> bool:
+    """
+    Waits for the summary page's Send button to show up.
+
+    Confirms the wizard actually reached the summary page. Without it,
+    a Naeste that the portal swallowed earlier leaves the run a page
+    short, where the Send button has never existed - and "the button is
+    gone" would then read as a successful send.
+
+    Args:
+        timeout (float): How long to wait for the button.
+        interval (float): Seconds between checks.
+
+    Returns:
+        bool: True once the button is there, False if it never showed.
+    """
+    deadline = time.monotonic() + timeout
+
+    while True:
+        if _send_button_exists() is True:
+            return True
+
+        if time.monotonic() >= deadline:
+            return False
+
+        time.sleep(interval)
+
+
+def _wait_for_send_button_to_go(timeout: float = 20.0, interval: float = 1.0) -> bool:
+    """
+    Waits for the summary page's Send button to disappear.
 
     An accesskey the page ignores leaves no trace, so the only sign
     that the message was really submitted is the summary page giving
-    way to the next one.
+    way to the next one. A check that cannot be made is retried rather
+    than taken for the button being gone.
 
     Args:
-        timeout (float): How long to wait for the button to disappear.
+        timeout (float): How long to wait for the button to go.
         interval (float): Seconds between checks.
 
     Returns:
@@ -681,21 +795,8 @@ def _send_button_is_gone(timeout: float = 20.0, interval: float = 1.0) -> bool:
     deadline = time.monotonic() + timeout
 
     while True:
-        try:
-            root_web_area = wait_for_control(
-                auto.DocumentControl,
-                {"AutomationId": "RootWebArea"},
-                search_depth=30,
-                timeout=2,
-            )
-            send_message_button = root_web_area.ButtonControl(
-                searchDepth=4, AutomationId="submitButton"
-            )
-
-            if not send_message_button.Exists(0, 0):
-                return True
-        except Exception as e:  # pylint: disable=broad-except
-            logger.warning("Could not check the Send button (%s), retrying.", e)
+        if _send_button_exists() is False:
+            return True
 
         if time.monotonic() >= deadline:
             return False
@@ -704,7 +805,10 @@ def _send_button_is_gone(timeout: float = 20.0, interval: float = 1.0) -> bool:
 
 
 def edi_portal_send_message(
-    use_shortcut: bool = True, wait_before: float = 2.0, verify_timeout: float = 20.0
+    use_shortcut: bool = True,
+    wait_before: float = 2.0,
+    summary_timeout: float = 15.0,
+    verify_timeout: float = 20.0,
 ) -> None:
     """
     Sends a message in the EDI portal.
@@ -714,23 +818,37 @@ def edi_portal_send_message(
     clicking the button in the UI tree. If the shortcut cannot be sent,
     the button is located and clicked instead.
 
-    The send is then verified: a shortcut the page ignores submits
-    nothing and raises nothing, which would otherwise surface much
-    later as "Message not sent." when the receipt is looked up, long
-    after the portal has been left behind.
+    The summary page is confirmed before sending and the send is
+    verified afterwards. Both matter: a Naeste the portal swallowed
+    earlier leaves the run on the page before the summary, where
+    nothing is submitted and no error is raised, and the problem then
+    surfaces as "Message not sent." when the receipt is looked up.
 
     Args:
         use_shortcut (bool): Send Alt+S instead of clicking the button.
         wait_before (float): Seconds to let the page settle before
                              sending Alt+S.
+        summary_timeout (float): Seconds to wait for the summary page.
         verify_timeout (float): Seconds to wait for the summary page to
                                 give way before calling the send failed.
 
     Raises:
-        RuntimeError: If the summary page is still showing its Send
-                      button afterwards, i.e. nothing was submitted.
+        RuntimeError: If the wizard never reached the summary page, or
+                      if that page is still showing its Send button
+                      afterwards, i.e. nothing was submitted.
     """
     try:
+        if not _wait_for_send_button(summary_timeout):
+            logger.error(
+                "No Send button after %.0fs - the EDI portal is not on the "
+                "summary page, so an earlier Naeste did not advance the wizard.",
+                summary_timeout,
+            )
+            raise RuntimeError(
+                "The EDI portal is not on the summary page: an earlier Naeste "
+                "did not advance the wizard, so there is nothing to send."
+            )
+
         if use_shortcut and _try_send_shortcut(
             SEND_MESSAGE_SHORTCUT_LETTER, wait_before
         ):
@@ -739,7 +857,7 @@ def edi_portal_send_message(
             _click_send_message_button_control()
             mechanism = "clicking the Send button"
 
-        if not _send_button_is_gone(verify_timeout):
+        if not _wait_for_send_button_to_go(verify_timeout):
             logger.error(
                 "The EDI portal still shows the Send button %.0fs after %s - "
                 "the message was not submitted.",
