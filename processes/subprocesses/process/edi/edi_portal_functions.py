@@ -13,7 +13,6 @@ import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pyodbc
 import uiautomation as auto
@@ -663,8 +662,49 @@ def _click_send_message_button_control() -> None:
     send_message_button.Click(simulateMove=False, waitTime=0)
 
 
+def _send_button_is_gone(timeout: float = 20.0, interval: float = 1.0) -> bool:
+    """
+    Tells whether the summary page's Send button has gone away.
+
+    An accesskey the page ignores leaves no trace, so the only sign
+    that the message was really submitted is the summary page giving
+    way to the next one.
+
+    Args:
+        timeout (float): How long to wait for the button to disappear.
+        interval (float): Seconds between checks.
+
+    Returns:
+        bool: True once the button is gone, False if it is still there
+              when the time runs out.
+    """
+    deadline = time.monotonic() + timeout
+
+    while True:
+        try:
+            root_web_area = wait_for_control(
+                auto.DocumentControl,
+                {"AutomationId": "RootWebArea"},
+                search_depth=30,
+                timeout=2,
+            )
+            send_message_button = root_web_area.ButtonControl(
+                searchDepth=4, AutomationId="submitButton"
+            )
+
+            if not send_message_button.Exists(0, 0):
+                return True
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Could not check the Send button (%s), retrying.", e)
+
+        if time.monotonic() >= deadline:
+            return False
+
+        time.sleep(interval)
+
+
 def edi_portal_send_message(
-    use_shortcut: bool = True, wait_before: float = 2.0
+    use_shortcut: bool = True, wait_before: float = 2.0, verify_timeout: float = 20.0
 ) -> None:
     """
     Sends a message in the EDI portal.
@@ -674,19 +714,44 @@ def edi_portal_send_message(
     clicking the button in the UI tree. If the shortcut cannot be sent,
     the button is located and clicked instead.
 
+    The send is then verified: a shortcut the page ignores submits
+    nothing and raises nothing, which would otherwise surface much
+    later as "Message not sent." when the receipt is looked up, long
+    after the portal has been left behind.
+
     Args:
         use_shortcut (bool): Send Alt+S instead of clicking the button.
         wait_before (float): Seconds to let the page settle before
                              sending Alt+S.
+        verify_timeout (float): Seconds to wait for the summary page to
+                                give way before calling the send failed.
+
+    Raises:
+        RuntimeError: If the summary page is still showing its Send
+                      button afterwards, i.e. nothing was submitted.
     """
     try:
-        if not (
-            use_shortcut
-            and _try_send_shortcut(SEND_MESSAGE_SHORTCUT_LETTER, wait_before)
+        if use_shortcut and _try_send_shortcut(
+            SEND_MESSAGE_SHORTCUT_LETTER, wait_before
         ):
+            mechanism = "Alt+S"
+        else:
             _click_send_message_button_control()
+            mechanism = "clicking the Send button"
 
-        logger.info("Message sent in EDI Portal.")
+        if not _send_button_is_gone(verify_timeout):
+            logger.error(
+                "The EDI portal still shows the Send button %.0fs after %s - "
+                "the message was not submitted.",
+                verify_timeout,
+                mechanism,
+            )
+            raise RuntimeError(
+                f"The EDI portal did not submit the message after {mechanism}: "
+                "the Send button is still on the summary page."
+            )
+
+        logger.info("Message sent in EDI Portal with %s.", mechanism)
     except Exception as e:
         logger.error("Error while sending message in EDI Portal: %s", e)
         raise
@@ -803,42 +868,19 @@ def edi_portal_get_journal_sent_receip(subject: str) -> str:
         grid_pattern = table_post_messages.GetPattern(auto.PatternId.GridPattern)
         row_count = grid_pattern.RowCount
 
-        latest_matching_row = None
-        latest_date = None
-
-        def _parse_date(date_str: str) -> datetime | None:
-            """Parse a Danish portal date such as '11-09-2025 13:28'.
-
-            The time may also arrive dot-separated, e.g. '22-10-2026 09.25'.
-            """
-            if not date_str:
-                return None
-
-            try:
-                return datetime.strptime(
-                    date_str.replace(".", ":"),
-                    "%d-%m-%Y %H:%M",
-                ).replace(tzinfo=ZoneInfo("Europe/Copenhagen"))
-            except ValueError:
-                return None
-
-        if row_count > 0:
-            for row in range(1, row_count):
-                message = grid_pattern.GetItem(row, 6).Name or ""
-                date_str = grid_pattern.GetItem(row, 2).Name or ""
-
-                if subject == message:
-                    parsed_date = _parse_date(date_str)
-
-                    if parsed_date is not None and (
-                        latest_date is None or parsed_date > latest_date
-                    ):
-                        latest_matching_row = row
-                        latest_date = parsed_date
+        latest_matching_row = _find_latest_matching_message(
+            grid_pattern, row_count, subject
+        )
 
         if latest_matching_row is None:
-            logger.error("Message not sent.")
-            raise RuntimeError("Message not sent.")
+            logger.error(
+                "No sent message matching subject %r found in %d rows.",
+                subject,
+                row_count,
+            )
+            raise RuntimeError(
+                f"Message not sent. No row matching subject: {subject!r}"
+            )
 
         latest_row_cell = grid_pattern.GetItem(latest_matching_row, 0)
         latest_row_parent = latest_row_cell.GetParentControl()
