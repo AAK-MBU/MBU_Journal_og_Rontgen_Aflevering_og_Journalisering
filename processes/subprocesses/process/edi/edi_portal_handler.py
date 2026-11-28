@@ -123,13 +123,12 @@ def edi_portal_handler(context: EdiContext) -> str | None:
         lambda ctx: edifuncs.edi_portal_upload_files(
             path_to_files=ctx.path_to_files_for_upload
         ),
-        lambda _: edifuncs.edi_portal_click_next_button(sleep_time=2),
         # Priority & send
         # lambda ctx: edifuncs.edi_portal_choose_priority(),
-        # The summary page is slow to render, and Alt+S on a half-built
-        # page does nothing, so this last transition gets a long settle.
-        lambda _: edifuncs.edi_portal_click_next_button(sleep_time=10),
-        lambda _: time.sleep(5),
+        # The portal silently ignores Naeste while it is still processing
+        # the uploaded files, and there is a priority page in between, so
+        # press until the summary page is actually up.
+        lambda _: edifuncs.edi_portal_advance_to_summary(),
         lambda _: edifuncs.edi_portal_send_message(),
         # Sending leaves the portal on the inbox, so go to the sent list
         # the receipt is read from. Runs in the already-sent case too.

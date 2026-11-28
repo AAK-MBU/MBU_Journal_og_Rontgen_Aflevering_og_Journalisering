@@ -804,6 +804,57 @@ def _wait_for_send_button_to_go(timeout: float = 20.0, interval: float = 1.0) ->
         time.sleep(interval)
 
 
+def edi_portal_advance_to_summary(
+    max_presses: int = 6, settle: float = 5.0, page_timeout: float = 10.0
+) -> None:
+    """
+    Advances from the file upload page to the summary page.
+
+    The portal ignores Naeste while it is still processing uploaded
+    files, and it does so silently, which leaves the run a page short
+    with nothing to send. Waiting for the processing banner is not
+    enough on its own - it does not always appear within the time we
+    give it, and the files carry their own per-file status - and there
+    is a priority page in between, so the number of presses needed is
+    not fixed either.
+
+    Naeste is therefore pressed until the summary page's Send button is
+    actually on screen. A press the portal ignores costs one more round
+    rather than derailing the rest of the run.
+
+    Args:
+        max_presses (int): How many times to press Naeste at most.
+        settle (float): Seconds to let the page settle before a press.
+        page_timeout (float): Seconds to wait for the summary page after
+                              each press before pressing again.
+
+    Raises:
+        RuntimeError: If the summary page never appears.
+    """
+    for press in range(1, max_presses + 1):
+        if _send_button_exists() is True:
+            logger.info("The EDI portal is on the summary page.")
+
+            return
+
+        logger.info(
+            "Pressing Naeste towards the summary page (%d/%d).", press, max_presses
+        )
+
+        if not _try_send_shortcut(NEXT_PAGE_SHORTCUT_LETTER, settle):
+            _click_next_button_control()
+
+        if _wait_for_send_button(page_timeout):
+            logger.info("The EDI portal is on the summary page.")
+
+            return
+
+    raise RuntimeError(
+        f"The EDI portal did not reach the summary page after {max_presses} "
+        "Naeste presses - the uploaded files are probably still processing."
+    )
+
+
 def edi_portal_send_message(
     use_shortcut: bool = True,
     wait_before: float = 2.0,
